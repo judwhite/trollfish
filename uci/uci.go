@@ -107,7 +107,6 @@ func (u *UCI) parseLine(line string) {
 		u.setOptionRaw(parts[1:]...)
 	case "position":
 		u.SetPosition(parts[1:]...)
-
 	case "stop":
 		// TODO: stop any searching threads
 	case "go":
@@ -124,11 +123,24 @@ func (u *UCI) parseLine(line string) {
 		lines = append(lines, start)
 		for _, move := range pos.Moves {
 			totalGames := move.White + move.Black + move.Draws
-			s := fmt.Sprintf("info %s %s w:%d b:%d d:%d rating:%d total:%d", move.SAN, move.UCI, move.White, move.Black, move.Draws, move.AverageRating, totalGames)
+
+			popularity := float64(totalGames) / float64(parentTotal)
+			whiteWin := float64(move.White) / float64(totalGames)
+			blackWin := float64(move.Black) / float64(totalGames)
+			draw := float64(move.Draws) / float64(totalGames)
+
+			s := fmt.Sprintf("info %5s %s %0.1f w:%d (%0.0f) b:%d (%0.0f) d:%d (%0.0f) rating:%d total:%d",
+				move.SAN, move.UCI, popularity*100,
+				move.White, whiteWin*100,
+				move.Black, blackWin*100,
+				move.Draws, draw*100,
+				move.AverageRating, totalGames)
 			lines = append(lines, s)
 		}
 		u.WriteLines(lines...)
 		// TODO: handle 'infinite' and 'movetime <ms>'
+	case "":
+	// no-op
 	default:
 		msg := fmt.Sprintf("info unknown command '%s'", parts[0])
 		u.WriteLine(msg)
