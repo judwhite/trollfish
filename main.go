@@ -3,7 +3,7 @@ package main
 import (
 	"context"
 	"runtime"
-	"yancy/uci"
+	"trollfish/uci"
 )
 
 // UCI stuff:

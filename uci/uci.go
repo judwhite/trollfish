@@ -13,7 +13,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-	"yancy/lichess"
+	"trollfish/lichess"
 )
 
 const startPosFEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
