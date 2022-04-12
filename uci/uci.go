@@ -440,7 +440,8 @@ func (u *UCI) Go(v ...string) {
 	// TODO: improve time management
 	agro := false
 
-	var moveTime int
+	moveTime := 500 + rand.Intn(2000)
+
 	if u.gameMoveCount < 5 {
 		moveTime = 500
 	} else if u.gameMateIn != 0 {
@@ -452,14 +453,18 @@ func (u *UCI) Go(v ...string) {
 		} else {
 			moveTime = 3000
 		}
-	} else if u.gameAbsEval > 2000 {
+	} else if u.gameAbsEval > 5000 {
 		agro = true
-		moveTime = 4000
+	} else if u.gameMoveCount >= 30 && u.gameMoveCount < 40 {
+		if u.gameAbsEval < 1500 {
+			agro = true
+			moveTime = 4000
+		}
 	} else if u.gameMoveCount >= 40 {
 		agro = true
-		moveTime = 4000
-	} else {
-		moveTime = 500 + rand.Intn(2000)
+		if u.gameAbsEval < 3500 {
+			moveTime = 4000
+		}
 	}
 
 	if agro {
