@@ -29,13 +29,14 @@ type UCI struct {
 
 	started int64
 
-	moveListMtx   sync.Mutex
-	moveListTime  int
-	moveList      []Info
-	gameMoveCount int
-	gameMultiPV   int
-	gameMateIn    int
-	gameAbsEval   int
+	moveListMtx     sync.Mutex
+	moveListNodes   int
+	moveList        []Info
+	moveListPrinted bool
+	gameMoveCount   int
+	gameMultiPV     int
+	gameMateIn      int
+	gameAbsEval     int
 
 	sf *stockfish.StockFish
 
@@ -61,8 +62,14 @@ type Info struct {
 }
 
 func (m Info) String() string {
-	return fmt.Sprintf("depth %d seldepth %d multipv %d score cp %d nodes %d nps %d hashfull %d tbhits %d time %d pv %s",
-		m.Depth, m.SelDepth, m.MultiPV, m.Score, m.Nodes, m.NPS, m.HashFull, m.TBHits, m.Time, m.PV,
+	var score string
+	if m.Mate == 0 {
+		score = fmt.Sprintf("cp %d", m.Score)
+	} else {
+		score = fmt.Sprintf("mate %d", m.Mate)
+	}
+	return fmt.Sprintf("depth %d seldepth %d multipv %d score %s nodes %d nps %d hashfull %d tbhits %d time %d pv %s",
+		m.Depth, m.SelDepth, m.MultiPV, score, m.Nodes, m.NPS, m.HashFull, m.TBHits, m.Time, m.PV,
 	)
 }
 
@@ -169,6 +176,10 @@ func (u *UCI) stockFishReadLoop() {
 			var move Info
 		infoLoop:
 			for i := 1; i < len(parts); i += 2 {
+				if i == len(parts)-1 {
+					break
+				}
+
 				key := parts[i]
 
 				var n int
@@ -183,7 +194,7 @@ func (u *UCI) stockFishReadLoop() {
 						n = atoi(parts[i+2])
 					}
 					i++
-					if parts[i+2] == "lowerbound" || parts[i+2] == "upperbound" {
+					if i+2 < len(parts) && (parts[i+2] == "lowerbound" || parts[i+2] == "upperbound") {
 						// ignore
 						i++
 					}
@@ -227,19 +238,17 @@ func (u *UCI) stockFishReadLoop() {
 			}
 
 			u.moveListMtx.Lock()
-			if move.Time != u.moveListTime {
-				u.moveListTime = move.Time
-				u.moveList = nil
-				go func() {
-					time.Sleep(50 * time.Millisecond)
-					u.moveListMtx.Lock()
-					pvs := make([]string, 0, len(u.moveList))
-					for _, move := range u.moveList {
-						pvs = append(pvs, fmt.Sprintf("info %s", move.String()))
+			if move.Nodes != u.moveListNodes {
+				if len(u.moveList) > 0 {
+					prevTime := u.moveList[0].Time
+					timeDiff := move.Time - prevTime
+					if timeDiff >= 10 {
+						u.printMoveList(false)
 					}
-					u.WriteLines(pvs...)
-					u.moveListMtx.Unlock()
-				}()
+				}
+				u.moveListNodes = move.Nodes
+				u.moveList = nil
+				u.moveListPrinted = false
 			}
 			u.moveList = append(u.moveList, move)
 			u.moveListMtx.Unlock()
@@ -251,7 +260,13 @@ func (u *UCI) stockFishReadLoop() {
 
 			minDist := 1_000_000
 
-			engineMove := u.moveList[0]
+			var engineMove Info
+			if len(u.moveList) > 0 {
+				engineMove = u.moveList[0]
+			} else {
+				engineMove = Info{PV: strings.Join(parts[1:], " ")}
+				bestMove = engineMove
+			}
 
 			u.gameAbsEval = int(math.Abs(float64(engineMove.Score)))
 			if u.gameAbsEval > 2000 || engineMove.Mate > 0 || u.gameMultiPV <= 2 {
@@ -262,8 +277,15 @@ func (u *UCI) stockFishReadLoop() {
 
 				for i := 0; i < len(u.moveList); i++ {
 					move := u.moveList[i]
+					if move.Mate < 0 {
+						// don't get mated
+						if i == 0 {
+							bestMove = engineMove
+						}
+						break
+					}
 
-					// attempt to maintain equality until there's a forced mate
+					// attempt to maintain equality until we hit agro
 
 					dist := move.Score
 					if dist < 0 {
@@ -276,8 +298,11 @@ func (u *UCI) stockFishReadLoop() {
 				}
 			}
 
+			u.printMoveList(false)
+
 			u.moveList = nil
-			u.moveListTime = 0
+			u.moveListPrinted = false
+			u.moveListNodes = 0
 
 			u.moveListMtx.Unlock()
 
@@ -371,7 +396,7 @@ func (u *UCI) SetUCI() {
 }
 
 func (u *UCI) SetOption(name, value string) {
-	switch name {
+	switch strings.ToLower(name) {
 	case "threads":
 		n, err := strconv.Atoi(value)
 		if err != nil || n < 1 {
@@ -382,9 +407,10 @@ func (u *UCI) SetOption(name, value string) {
 		u.sf.Write(fmt.Sprintf("setoption name Threads value %d", n))
 		u.sf.Write(fmt.Sprintf("setoption name Hash value %d", n*256))
 		u.sf.Write(fmt.Sprintf("setoption name MultiPV value %d", u.gameMultiPV))
-
+	case "multipv":
+		u.sf.Write(fmt.Sprintf("setoption name MultiPV value %s", value))
 	default:
-		u.WriteLine(fmt.Sprintf("info option %s not found", name))
+		u.WriteLine(fmt.Sprintf("info option '%s' not found", name))
 	}
 }
 
@@ -443,16 +469,10 @@ func (u *UCI) Go(v ...string) {
 	moveTime := 500 + rand.Intn(2000)
 
 	if u.gameMoveCount < 5 {
-		moveTime = 500
-	} else if u.gameMateIn != 0 {
+		moveTime = 100 + rand.Intn(500)
+	} else if u.gameMateIn > 0 {
 		agro = true
-		if u.gameMateIn < 5 {
-			moveTime = 100 * u.gameMateIn
-		} else if u.gameMateIn >= 10 {
-			moveTime = 3500
-		} else {
-			moveTime = 3000
-		}
+		moveTime = 100 * u.gameMateIn
 	} else if u.gameAbsEval > 5000 {
 		agro = true
 	} else if u.gameMoveCount >= 30 && u.gameMoveCount < 40 {
@@ -488,7 +508,8 @@ func (u *UCI) SetPosition(v ...string) {
 
 	if cmd == "fen" {
 		u.fen = strings.Join(v[1:], " ")
-		u.WriteLine(fmt.Sprintf("info fen set to '%s'", u.fen))
+		u.gameMoveCount = atoi(v[len(v)-1])
+		u.WriteLine(fmt.Sprintf("info fen set to '%s' (move %d)", u.fen, u.gameMoveCount))
 		return
 	}
 
@@ -516,6 +537,25 @@ func (u *UCI) SetPosition(v ...string) {
 	u.gameMoveCount = moveCount
 
 	// TODO: handle moves. right now we pass it to SF without storing state.
+}
+
+func (u *UCI) printMoveList(lock bool) {
+	if lock {
+		u.moveListMtx.Lock()
+		defer u.moveListMtx.Unlock()
+	}
+
+	if u.moveListPrinted {
+		return
+	}
+
+	pvs := make([]string, 0, len(u.moveList))
+	for _, move := range u.moveList {
+		pvs = append(pvs, fmt.Sprintf("info %s", move.String()))
+	}
+	u.WriteLines(pvs...)
+
+	u.moveListPrinted = true
 }
 
 func (u *UCI) WriteLine(s string) {
