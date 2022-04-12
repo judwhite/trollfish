@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math"
+	"math/rand"
 	"os"
 	"strconv"
 	"strings"
@@ -27,9 +29,13 @@ type UCI struct {
 
 	started int64
 
-	moveListTime int
-	moveListMtx  sync.Mutex
-	moveList     []Info
+	moveListMtx   sync.Mutex
+	moveListTime  int
+	moveList      []Info
+	gameMoveCount int
+	gameMultiPV   int
+	gameMateIn    int
+	gameAbsEval   int
 
 	sf *stockfish.StockFish
 
@@ -62,9 +68,10 @@ func (m Info) String() string {
 
 func New(name, author string, options ...Option) *UCI {
 	return &UCI{
-		name:    name,
-		author:  author,
-		options: options,
+		name:        name,
+		author:      author,
+		options:     options,
+		gameMultiPV: 8,
 	}
 }
 
@@ -151,7 +158,7 @@ func (u *UCI) stockFishReadLoop() {
 			n := 12
 			u.sf.Write(fmt.Sprintf("setoption name Threads value %d", n))
 			u.sf.Write(fmt.Sprintf("setoption name Hash value %d", n*256))
-			u.sf.Write(fmt.Sprintf("setoption name MultiPV value %d", 8))
+			u.sf.Write(fmt.Sprintf("setoption name MultiPV value %d", u.gameMultiPV))
 			u.WriteLine("uciok")
 		case "info":
 			if parts[1] == "string" {
@@ -224,7 +231,7 @@ func (u *UCI) stockFishReadLoop() {
 				u.moveListTime = move.Time
 				u.moveList = nil
 				go func() {
-					time.Sleep(250 * time.Millisecond)
+					time.Sleep(50 * time.Millisecond)
 					u.moveListMtx.Lock()
 					pvs := make([]string, 0, len(u.moveList))
 					for _, move := range u.moveList {
@@ -243,14 +250,21 @@ func (u *UCI) stockFishReadLoop() {
 			u.moveListMtx.Lock()
 
 			minDist := 1_000_000
-			maxMate := 0
 
-			for i := 0; i < len(u.moveList); i++ {
-				move := u.moveList[i]
+			engineMove := u.moveList[0]
 
-				// attempt a draw, but if there's a forced mate take the longest one
+			u.gameAbsEval = int(math.Abs(float64(engineMove.Score)))
+			if u.gameAbsEval > 2000 || engineMove.Mate > 0 || u.gameMultiPV <= 2 {
+				bestMove = engineMove
+				u.gameMateIn = engineMove.Mate
+			} else {
+				u.gameMateIn = 0
 
-				if maxMate == 0 && move.Mate == 0 {
+				for i := 0; i < len(u.moveList); i++ {
+					move := u.moveList[i]
+
+					// attempt to maintain equality until there's a forced mate
+
 					dist := move.Score
 					if dist < 0 {
 						dist *= -1
@@ -260,16 +274,11 @@ func (u *UCI) stockFishReadLoop() {
 						minDist = dist
 					}
 				}
-
-				if move.Mate > maxMate {
-					bestMove = move
-					maxMate = move.Mate
-				}
-
 			}
 
 			u.moveList = nil
 			u.moveListTime = 0
+
 			u.moveListMtx.Unlock()
 
 			uciMove := strings.Split(bestMove.PV, " ")[0]
@@ -303,6 +312,11 @@ func (u *UCI) parseLine(line string) {
 		u.sf.Write("isready")
 	case "ucinewgame":
 		u.sf.Write("ucinewgame")
+		u.gameMoveCount = 0
+		u.gameAbsEval = 0
+		u.gameMateIn = 0
+		u.gameMultiPV = 8
+		u.sf.Write(fmt.Sprintf("setoption name MultiPV value %d", u.gameMultiPV))
 	case "setoption":
 		if len(parts) > 4 {
 			key := parts[2] // TODO: ignores that a key can be more than one word
@@ -367,7 +381,7 @@ func (u *UCI) SetOption(name, value string) {
 
 		u.sf.Write(fmt.Sprintf("setoption name Threads value %d", n))
 		u.sf.Write(fmt.Sprintf("setoption name Hash value %d", n*256))
-		u.sf.Write(fmt.Sprintf("setoption name MultiPV value %d", 8))
+		u.sf.Write(fmt.Sprintf("setoption name MultiPV value %d", u.gameMultiPV))
 
 	default:
 		u.WriteLine(fmt.Sprintf("info option %s not found", name))
@@ -424,7 +438,38 @@ func (u *UCI) Go(v ...string) {
 
 	// don't tell SF we're in a time control
 	// TODO: improve time management
-	u.sf.Write("go movetime 2500")
+	agro := false
+
+	var moveTime int
+	if u.gameMoveCount < 5 {
+		moveTime = 500
+	} else if u.gameMateIn != 0 {
+		agro = true
+		if u.gameMateIn < 5 {
+			moveTime = 100 * u.gameMateIn
+		} else if u.gameMateIn >= 10 {
+			moveTime = 3500
+		} else {
+			moveTime = 3000
+		}
+	} else if u.gameAbsEval > 2000 {
+		agro = true
+		moveTime = 4000
+	} else if u.gameMoveCount >= 40 {
+		agro = true
+		moveTime = 4000
+	} else {
+		moveTime = 500 + rand.Intn(2000)
+	}
+
+	if agro {
+		if u.gameMultiPV != 2 {
+			u.gameMultiPV = 2
+			u.sf.Write(fmt.Sprintf("setoption name MultiPV value %d", u.gameMultiPV))
+		}
+	}
+
+	u.sf.Write(fmt.Sprintf("go movetime %d", moveTime))
 }
 
 func (u *UCI) SetPosition(v ...string) {
@@ -461,6 +506,9 @@ func (u *UCI) SetPosition(v ...string) {
 		u.WriteLine(fmt.Sprintf("info ERR: position startpos '%s' command unknown", cmd))
 		return
 	}
+
+	moveCount := (len(v) - 1) / 2
+	u.gameMoveCount = moveCount
 
 	// TODO: handle moves. right now we pass it to SF without storing state.
 }
