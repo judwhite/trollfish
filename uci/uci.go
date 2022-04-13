@@ -452,6 +452,82 @@ func (u *UCI) setOptionRaw(v ...string) {
 }
 
 func (u *UCI) Go(v ...string) {
+	// trollfish opening book
+	switch u.fen {
+	case startPosFEN:
+		// 1. e4 (White, best (gambits) by test)
+		u.WriteLine("bestmove e2e4")
+		return
+	case "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq e6 0 2":
+		// 1. e4 e5 2. Qh5 (White, Wayward Queen)
+		u.WriteLine("bestmove d1h5")
+		return
+	case "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1":
+		// 1. e4 c5 (Black, Smith-Morra Gambit)
+		u.WriteLine("bestmove c7c5")
+		return
+	case "rnbqkbnr/pp1ppppp/8/2p5/4P3/8/PPPP1PPP/RNBQKBNR w KQkq c6 0 2":
+		// 1. e4 c5 2. d4 (White, Smith-Morra Gambit)
+		u.WriteLine("bestmove d2d4")
+		return
+	case "rnbqkbnr/pp1ppppp/8/2p5/3PP3/8/PPP2PPP/RNBQKBNR b KQkq d3 0 2":
+		// 1. e4 c5 2. d4 cxd4 (Black, Smith-Morra Gambit)
+		u.WriteLine("bestmove c5d4")
+		return
+	case "rnbqkbnr/pp1ppppp/8/8/3pP3/8/PPP2PPP/RNBQKBNR w KQkq - 0 3":
+		// 1. e4 c5 2. d4 cxd4 3. c3 (White, Smith-Morra Gambit)
+		u.WriteLine("bestmove c2c3")
+		return
+	case "rnbqkbnr/pp1ppppp/8/8/3pP3/2P5/PP3PPP/RNBQKBNR b KQkq - 0 3":
+		// 1. e4 c5 2. d4 cxd4 3. c3 dxc3 (Black, Smith-Morra Gambit)
+		u.WriteLine("bestmove d4c3")
+		return
+	case "rnbqkbnr/pp1ppppp/8/8/4P3/2p5/PP3PPP/RNBQKBNR w KQkq - 0 4":
+		// 1. e4 c5 2. d4 cxd4 3. c3 dxc3 4. Nxc3 (White, Smith-Morra Gambit)
+		u.WriteLine("bestmove b1c3")
+		return
+	case "rnbqkbnr/pppppppp/8/8/3P4/8/PPP1PPPP/RNBQKBNR b KQkq d3 0 1":
+		// 1. d4 e5 (Black, Englund Gambit)
+		u.WriteLine("bestmove e7e5")
+		return
+	case "rnbqkbnr/pppp1ppp/8/4p3/3P4/8/PPP1PPPP/RNBQKBNR w KQkq e6 0 2":
+		// 1. d4 e5 2. dxe5 (White, Englund Gambit)
+		u.WriteLine("bestmove d4e5")
+		return
+	case "rnbqkbnr/pppp1ppp/8/4P3/8/8/PPP1PPPP/RNBQKBNR b KQkq - 0 2":
+		// 1. d4 e5 2. dxe5 Nc6 (Black, Englund Gambit)
+		u.WriteLine("bestmove b8c6")
+		return
+	case "r1bqkbnr/pppp1ppp/2n5/4P3/8/8/PPP1PPPP/RNBQKBNR w KQkq - 1 3":
+		// 1. d4 e5 2. dxe5 Nc6 3. Nf3 (White, Englund Gambit)
+		u.WriteLine("bestmove g1f3")
+		return
+	case "r1bqkbnr/pppp1ppp/2n5/4P3/8/5N2/PPP1PPPP/RNBQKB1R b KQkq - 2 3": // 3. Nf3
+		// 1. d4 e5 2. dxe5 Nc6 3. Nf3 Qe7 (Black, Englund Gambit)
+		u.WriteLine("bestmove d8e7")
+		return
+	case "r1bqkbnr/pppp1ppp/2n5/4P3/5B2/8/PPP1PPPP/RN1QKBNR b KQkq - 2 3": // 3. Bf4
+		// 1. d4 e5 2. dxe5 Nc6 3. Bf4 Qe7 (Black, Englund Gambit)
+		u.WriteLine("bestmove d8e7")
+		return
+	case "r1b1kbnr/ppppqppp/2n5/4P3/8/5N2/PPP1PPPP/RNBQKB1R w KQkq - 3 4": // 4. Bg5
+		// 1. d4 e5 2. dxe5 Nc6 3. Nf3 Qe7 4. Bg5 (White, Englund Gambit)
+		u.WriteLine("bestmove c1g5")
+		return
+	case "r1b1kbnr/ppppqppp/2n5/4P1B1/8/5N2/PPP1PPPP/RN1QKB1R b KQkq - 4 4": // 4. Bg5 Qb4+
+		// 1. d4 e5 2. dxe5 Nc6 3. Nf3 Qe7 4. Bg5 Qb4+ (Black, Englund Gambit)
+		u.WriteLine("bestmove e7b4")
+		return
+	case "r1b1kbnr/ppppqppp/2n5/4P3/5B2/5N2/PPP1PPPP/RN1QKB1R b KQkq - 4 4": // (Nf3, Bf4) ... Qb4+
+		// 1. d4 e5 2. dxe5 Nc6 3. Nf3 Qe7 4. Bg4 Qb4+ (Black, Englund Gambit)
+		u.WriteLine("bestmove e7b4")
+		return
+	case "r1b1kbnr/pppp1ppp/2n5/4P3/1q6/5N2/PPPBPPPP/RN1QKB1R b KQkq - 6 5":
+		// 1. d4 e5 2. dxe5 Nc6 3. Nf3 Qe7 4. (Bg4, Bg5) Qb4+ 5. Bd2 Qxc2 (Black, Englund Gambit)
+		u.WriteLine("bestmove b4b2")
+		return
+	}
+
 	// passthroughs
 	if len(v) <= 1 {
 		u.sf.Write(fmt.Sprintf("go %s", strings.Join(v, " ")))
