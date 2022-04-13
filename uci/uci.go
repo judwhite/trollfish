@@ -452,6 +452,7 @@ func (u *UCI) setOptionRaw(v ...string) {
 }
 
 func (u *UCI) Go(v ...string) {
+	// passthroughs
 	if len(v) <= 1 {
 		u.sf.Write(fmt.Sprintf("go %s", strings.Join(v, " ")))
 		return
@@ -466,24 +467,24 @@ func (u *UCI) Go(v ...string) {
 	// TODO: improve time management
 	agro := false
 
-	moveTime := 500 + rand.Intn(2000)
+	moveTime := 500 + rand.Intn(1000)
 
 	if u.gameMoveCount < 5 {
 		moveTime = 100 + rand.Intn(500)
 	} else if u.gameMateIn > 0 {
 		agro = true
 		moveTime = 100 * u.gameMateIn
-	} else if u.gameAbsEval > 5000 {
+	} else if u.gameAbsEval > 500 {
 		agro = true
 	} else if u.gameMoveCount >= 30 && u.gameMoveCount < 40 {
-		if u.gameAbsEval < 1500 {
+		if u.gameAbsEval < 150 {
 			agro = true
-			moveTime = 4000
+			moveTime = 2000 + rand.Intn(1000)
 		}
 	} else if u.gameMoveCount >= 40 {
 		agro = true
-		if u.gameAbsEval < 3500 {
-			moveTime = 4000
+		if u.gameAbsEval < 350 {
+			moveTime = 2500 + rand.Intn(1000)
 		}
 	}
 
