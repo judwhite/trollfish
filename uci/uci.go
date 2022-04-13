@@ -37,6 +37,7 @@ type UCI struct {
 	gameMultiPV     int
 	gameMateIn      int
 	gameAbsEval     int
+	gameAgro        bool
 
 	sf *stockfish.StockFish
 
@@ -268,10 +269,10 @@ func (u *UCI) stockFishReadLoop() {
 				bestMove = engineMove
 			}
 
-			u.gameAbsEval = int(math.Abs(float64(engineMove.Score)))
-			if u.gameAbsEval > 2000 || engineMove.Mate > 0 || u.gameMultiPV <= 2 {
+			engineMoveAbsEval := int(math.Abs(float64(engineMove.Score)))
+			if engineMoveAbsEval > 2000 || engineMove.Mate > 0 || u.gameAgro {
 				bestMove = engineMove
-				u.gameMateIn = engineMove.Mate
+				u.gameAgro = true
 			} else {
 				u.gameMateIn = 0
 
@@ -304,11 +305,19 @@ func (u *UCI) stockFishReadLoop() {
 			u.moveListPrinted = false
 			u.moveListNodes = 0
 
+			u.gameMateIn = bestMove.Mate
+			u.gameAbsEval = int(math.Abs(float64(bestMove.Score)))
+
 			u.moveListMtx.Unlock()
 
 			uciMove := strings.Split(bestMove.PV, " ")[0]
 
 			u.WriteLine(fmt.Sprintf("bestmove %s", uciMove))
+			u.logInfo(fmt.Sprintf("agro: %v engine_move: %s engine_move_eval: %d bestmove: %s bestmove_eval: %d",
+				u.gameAgro,
+				strings.Split(engineMove.PV, " ")[0], engineMove.Score,
+				uciMove, bestMove.Score,
+			))
 
 		default:
 			u.logInfo(fmt.Sprintf("SF: <- %s", line))
@@ -341,6 +350,7 @@ func (u *UCI) parseLine(line string) {
 		u.gameAbsEval = 0
 		u.gameMateIn = 0
 		u.gameMultiPV = 8
+		u.gameAgro = false
 		u.sf.Write(fmt.Sprintf("setoption name MultiPV value %d", u.gameMultiPV))
 	case "setoption":
 		if len(parts) > 4 {
@@ -550,7 +560,7 @@ func (u *UCI) Go(v ...string) {
 	} else if u.gameMateIn > 0 {
 		agro = true
 		moveTime = 100 * u.gameMateIn
-	} else if u.gameAbsEval > 500 {
+	} else if u.gameAbsEval > 800 {
 		agro = true
 	} else if u.gameMoveCount >= 30 && u.gameMoveCount < 40 {
 		if u.gameAbsEval < 150 {
@@ -560,11 +570,12 @@ func (u *UCI) Go(v ...string) {
 	} else if u.gameMoveCount >= 40 {
 		agro = true
 		if u.gameAbsEval < 350 {
-			moveTime = 2500 + rand.Intn(1000)
+			moveTime = 3500 + rand.Intn(1000)
 		}
 	}
 
 	if agro {
+		u.gameAgro = true
 		if u.gameMultiPV != 2 {
 			u.gameMultiPV = 2
 			u.sf.Write(fmt.Sprintf("setoption name MultiPV value %d", u.gameMultiPV))
