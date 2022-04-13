@@ -74,14 +74,16 @@ func TestFENtoBoard(t *testing.T) {
 					loc       string
 					want, got strings.Builder
 				)
+				writeBoth := func(s string) {
+					want.WriteString(s)
+					got.WriteString(s)
+				}
 
-				want.WriteString("   abcdefgh\n   --------\n")
-				got.WriteString("   abcdefgh\n   --------\n")
+				writeBoth("   abcdefgh\n   --------\n")
 				for i := 0; i < 8; i++ {
 					offset := i * 8
 					rank := '8' - i
-					want.WriteString(fmt.Sprintf("%c: ", rank))
-					got.WriteString(fmt.Sprintf("%c: ", rank))
+					writeBoth(fmt.Sprintf("%c: ", rank))
 
 					for j := 0; j < 8; j++ {
 						idx := offset + j
@@ -97,8 +99,7 @@ func TestFENtoBoard(t *testing.T) {
 						got.WriteString(sq(board.Pos[idx]))
 					}
 
-					want.WriteByte('\n')
-					got.WriteByte('\n')
+					writeBoth("\n")
 				}
 
 				var sb strings.Builder
@@ -119,6 +120,50 @@ func TestFENtoBoard(t *testing.T) {
 			}
 			if board.FullMove != c.wantFullMove {
 				t.Errorf("FullMove, want: '%s' got: '%s'", c.wantFullMove, board.FullMove)
+			}
+		})
+	}
+}
+
+func TestMakeMoves(t *testing.T) {
+	// arrange
+	cases := []struct {
+		start string
+		moves []string
+		want  string
+	}{
+		{
+			start: startPosFEN,
+			moves: []string{"g1f3"},
+			want:  "rnbqkbnr/pppppppp/8/8/8/5N2/PPPPPPPP/RNBQKB1R b KQkq - 1 1",
+		},
+		{
+			start: startPosFEN,
+			moves: strings.Split("g1f3 d7d5 e2e3 c7c5 b1c3 g8f6 d2d4 e7e6 f1e2 b8c6 e1g1", " "),
+			want:  "r1bqkb1r/pp3ppp/2n1pn2/2pp4/3P4/2N1PN2/PPP1BPPP/R1BQ1RK1 b kq - 3 6",
+		},
+		{
+			start: "r1bqkb1r/pp3ppp/2n1pn2/2pp4/3P4/2N1PN2/PPP1BPPP/R1BQ1RK1 b kq - 3 6",
+			moves: strings.Split("c6b4 h2h4 b7b6 h4h5 g7g5", " "),
+			want:  "r1bqkb1r/p4p1p/1p2pn2/2pp2pP/1n1P4/2N1PN2/PPP1BPP1/R1BQ1RK1 w kq g6 0 9",
+		},
+		{
+			start: "r1bqkb1r/p4p1p/1p2pn2/2pp2pP/1n1P4/2N1PN2/PPP1BPP1/R1BQ1RK1 w kq g6 0 9",
+			moves: []string{"h5g6"},
+			want:  "r1bqkb1r/p4p1p/1p2pnP1/2pp4/1n1P4/2N1PN2/PPP1BPP1/R1BQ1RK1 b kq - 0 9",
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(strings.Join(c.moves, " "), func(t *testing.T) {
+			// act
+			b := FENtoBoard(c.start)
+			b.Moves(c.moves...)
+			got := b.FEN()
+
+			// assert
+			if c.want != got {
+				t.Errorf(fmt.Sprintf("\nwant: '%s'\ngot:  '%s'", c.want, got))
 			}
 		})
 	}
