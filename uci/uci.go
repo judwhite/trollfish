@@ -418,7 +418,8 @@ func (u *UCI) SetOption(name, value string) {
 		u.sf.Write(fmt.Sprintf("setoption name Hash value %d", n*256))
 		u.sf.Write(fmt.Sprintf("setoption name MultiPV value %d", u.gameMultiPV))
 	case "multipv":
-		u.sf.Write(fmt.Sprintf("setoption name MultiPV value %s", value))
+		// ignore
+		//u.sf.Write(fmt.Sprintf("setoption name MultiPV value %s", value))
 	default:
 		u.WriteLine(fmt.Sprintf("info option '%s' not found", name))
 	}
