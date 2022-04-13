@@ -83,7 +83,11 @@ func (b *Board) Moves(moves ...string) {
 		}
 
 		fromUCI := move[:2]
-		toUCI := move[2:]
+		toUCI := move[2:4]
+		var promote string
+		if len(move) > 4 {
+			promote = string(move[4])
+		}
 
 		// castling privileges
 		if fromUCI == "a1" || toUCI == "a1" {
@@ -101,12 +105,12 @@ func (b *Board) Moves(moves ...string) {
 		}
 
 		from, to := uciToIndex(fromUCI), uciToIndex(toUCI)
+		piece := b.Pos[from]
+		isCapture := b.Pos[to] != ' '
 		b.Pos[to] = b.Pos[from]
 		b.Pos[from] = ' '
 
-		piece := b.Pos[to]
-
-		if toUCI == b.EnPassantSquare {
+		if toUCI == b.EnPassantSquare && (piece == 'P' || piece == 'p') {
 			var captureOn int
 			if activeColor == 0 {
 				captureOn = to - 8 // next move is white's, so the target is in black's position
@@ -114,6 +118,7 @@ func (b *Board) Moves(moves ...string) {
 				captureOn = to + 8
 			}
 			b.Pos[captureOn] = ' '
+			isCapture = true
 		}
 
 		// pawn move, reset halfmove clock; en passant square
@@ -130,7 +135,20 @@ func (b *Board) Moves(moves ...string) {
 				b.EnPassantSquare = fmt.Sprintf("%c%c", 'a'+to%8, file)
 			}
 		} else {
-			halfMoveClock++
+			if isCapture {
+				halfMoveClock = 0
+			} else {
+				halfMoveClock++
+			}
+		}
+
+		// promotion
+		if promote != "" {
+			if activeColor == 0 {
+				b.Pos[to] = rune(promote[0])
+			} else {
+				b.Pos[to] = rune(promote[0] - 32)
+			}
 		}
 
 		// white king castle
@@ -180,7 +198,11 @@ func (b *Board) Moves(moves ...string) {
 	if bq {
 		cstl.WriteRune('q')
 	}
-	b.Castling = cstl.String()
+	if cstl.Len() == 0 {
+		b.Castling = "-"
+	} else {
+		b.Castling = cstl.String()
+	}
 
 	// NOTE: en passant target square handling per move
 

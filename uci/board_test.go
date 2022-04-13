@@ -152,6 +152,21 @@ func TestMakeMoves(t *testing.T) {
 			moves: []string{"h5g6"},
 			want:  "r1bqkb1r/p4p1p/1p2pnP1/2pp4/1n1P4/2N1PN2/PPP1BPP1/R1BQ1RK1 b kq - 0 9",
 		},
+		{
+			start: "r1bqkb1r/p4p1p/1p2pnP1/2pp4/1n1P4/2N1PN2/PPP1BPP1/R1BQ1RK1 b kq - 0 9",
+			moves: strings.Split("h7h5 g6g7 f6e4 g7h8q", " "),
+			want:  "r1bqkb1Q/p4p2/1p2p3/2pp3p/1n1Pn3/2N1PN2/PPP1BPP1/R1BQ1RK1 b q - 0 11",
+		},
+		{
+			start: "r1bqkb1r/p4p1p/1p2pnP1/2pp4/1n1P4/2N1PN2/PPP1BPP1/R1BQ1RK1 b kq - 0 9",
+			moves: strings.Split("h7h5 g6g7 f6e4 g7h8q e4g3 h8f8", " "),
+			want:  "r1bqkQ2/p4p2/1p2p3/2pp3p/1n1P4/2N1PNn1/PPP1BPP1/R1BQ1RK1 b q - 0 12",
+		},
+		{
+			start: "r1bqkb1r/p4p1p/1p2pnP1/2pp4/1n1P4/2N1PN2/PPP1BPP1/R1BQ1RK1 b kq - 0 9",
+			moves: strings.Split("h7h5 g6g7 f6e4 g7h8q e4g3 h8f8 e8d7", " "),
+			want:  "r1bq1Q2/p2k1p2/1p2p3/2pp3p/1n1P4/2N1PNn1/PPP1BPP1/R1BQ1RK1 w - - 1 13",
+		},
 	}
 
 	for _, c := range cases {
