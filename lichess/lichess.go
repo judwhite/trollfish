@@ -1,10 +1,14 @@
 package lichess
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"net/url"
+	"os"
+	"time"
 )
 
 const allRatings = "1600,1800,2000,2200,2500"
@@ -89,4 +93,56 @@ func Lookup(fen, play string) (PositionResults, error) {
 	}
 
 	return result, nil
+}
+
+func StreamBots() error {
+	oauthToken, ok := os.LookupEnv("LICHESS_BOT_TOKEN")
+	if !ok {
+		return fmt.Errorf("LICHESS_BOT_TOKEN not found")
+	}
+
+	req, err := http.NewRequest("GET", "https://lichess.org/api/bot/online", nil)
+	if err != nil {
+		return err
+	}
+
+	req.Header.Add("Bearer", oauthToken)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return fmt.Errorf("http status code %d", resp.StatusCode)
+	}
+
+	r := bufio.NewScanner(resp.Body)
+	for r.Scan() {
+		ndjson := r.Text()
+
+		var user User
+		if err := json.Unmarshal([]byte(ndjson), &user); err != nil {
+			log.Fatal(err)
+		}
+
+		blitz, ok := user.Perfs["blitz"]
+		if !ok {
+			continue
+		}
+		if blitz.Games == 0 || blitz.Provisional {
+			continue
+		}
+		created := time.UnixMilli(user.CreatedAt)
+		seen := time.UnixMilli(user.SeenAt)
+		fmt.Printf("%s blitz: games: %d rating: %d created: %v seen: %v ago\n", user.ID, blitz.Games, blitz.Rating,
+			created.Format(time.RubyDate), time.Since(seen).Round(time.Second))
+	}
+
+	if err := r.Err(); err != nil {
+		return err
+	}
+
+	return nil
 }
