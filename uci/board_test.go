@@ -139,6 +139,11 @@ func TestMakeMoves(t *testing.T) {
 		},
 		{
 			start: startPosFEN,
+			moves: strings.Split("g1f3 d7d5 e2e3 c7c5 b1c3 g8f6 d2d4 e7e6 f1e2 b8c6", " "),
+			want:  "r1bqkb1r/pp3ppp/2n1pn2/2pp4/3P4/2N1PN2/PPP1BPPP/R1BQK2R w KQkq - 2 6",
+		},
+		{
+			start: startPosFEN,
 			moves: strings.Split("g1f3 d7d5 e2e3 c7c5 b1c3 g8f6 d2d4 e7e6 f1e2 b8c6 e1g1", " "),
 			want:  "r1bqkb1r/pp3ppp/2n1pn2/2pp4/3P4/2N1PN2/PPP1BPPP/R1BQ1RK1 b kq - 3 6",
 		},
