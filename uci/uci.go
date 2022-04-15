@@ -19,6 +19,10 @@ import (
 )
 
 const startPosFEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+const defaultThreads = 16
+const threadsHashMultiplier = 512
+const defaultMultiPV = 5
+const agroMultiPV = 2
 
 type UCI struct {
 	name    string
@@ -29,15 +33,17 @@ type UCI struct {
 
 	started int64
 
-	moveListMtx     sync.Mutex
-	moveListNodes   int
-	moveList        []Info
-	moveListPrinted bool
-	gameMoveCount   int
-	gameMultiPV     int
-	gameMateIn      int
-	gameAbsEval     int
-	gameAgro        bool
+	moveListMtx       sync.Mutex
+	moveListNodes     int
+	moveList          []Info
+	moveListPrinted   bool
+	gameMoveCount     int
+	gameActiveColor   string
+	gameMultiPV       int
+	gameMateIn        int
+	gameEval          int
+	gameEvalHumanized float64
+	gameAgro          bool
 
 	sf *stockfish.StockFish
 
@@ -79,7 +85,7 @@ func New(name, author string, options ...Option) *UCI {
 		name:        name,
 		author:      author,
 		options:     options,
-		gameMultiPV: 8,
+		gameMultiPV: defaultMultiPV,
 	}
 }
 
@@ -163,9 +169,9 @@ func (u *UCI) stockFishReadLoop() {
 		case "readyok":
 			u.WriteLine("readyok")
 		case "uciok":
-			n := 12
+			n := defaultThreads
 			u.sf.Write(fmt.Sprintf("setoption name Threads value %d", n))
-			u.sf.Write(fmt.Sprintf("setoption name Hash value %d", n*256))
+			u.sf.Write(fmt.Sprintf("setoption name Hash value %d", n*threadsHashMultiplier))
 			u.sf.Write(fmt.Sprintf("setoption name MultiPV value %d", u.gameMultiPV))
 			u.WriteLine("uciok")
 		case "info":
@@ -255,8 +261,6 @@ func (u *UCI) stockFishReadLoop() {
 			u.moveListMtx.Unlock()
 
 		case "bestmove":
-			var bestMove Info
-
 			u.moveListMtx.Lock()
 
 			minDist := 1_000_000
@@ -266,12 +270,11 @@ func (u *UCI) stockFishReadLoop() {
 				engineMove = u.moveList[0]
 			} else {
 				engineMove = Info{PV: strings.Join(parts[1:], " ")}
-				bestMove = engineMove
 			}
+			bestMove := engineMove
 
 			engineMoveAbsEval := int(math.Abs(float64(engineMove.Score)))
 			if engineMoveAbsEval > 2000 || engineMove.Mate > 0 || u.gameAgro {
-				bestMove = engineMove
 				u.gameAgro = true
 			} else {
 				u.gameMateIn = 0
@@ -280,14 +283,15 @@ func (u *UCI) stockFishReadLoop() {
 					move := u.moveList[i]
 					if move.Mate < 0 {
 						// don't get mated
-						if i == 0 {
-							bestMove = engineMove
-						}
 						break
 					}
 
-					// attempt to maintain equality until we hit agro
+					// avoid gross blunders
+					if u.gameEval-move.Score > 250 {
+						continue
+					}
 
+					// attempt to maintain equality until we hit agro
 					dist := move.Score
 					if dist < 0 {
 						dist *= -1
@@ -306,18 +310,26 @@ func (u *UCI) stockFishReadLoop() {
 			u.moveListNodes = 0
 
 			u.gameMateIn = bestMove.Mate
-			u.gameAbsEval = int(math.Abs(float64(bestMove.Score)))
+			u.gameEval = bestMove.Score
 
 			u.moveListMtx.Unlock()
 
 			uciMove := strings.Split(bestMove.PV, " ")[0]
 
 			u.WriteLine(fmt.Sprintf("bestmove %s", uciMove))
-			u.logInfo(fmt.Sprintf("agro: %v engine_move: %s engine_move_eval: %d bestmove: %s bestmove_eval: %d",
+			u.logInfo(fmt.Sprintf("agro: %v sf_move: %s sf_move_eval: %d played_move: %s eval: %d",
 				u.gameAgro,
 				strings.Split(engineMove.PV, " ")[0], engineMove.Score,
 				uciMove, bestMove.Score,
 			))
+
+			evalHuman := float64(bestMove.Score) / 100
+			if bestMove.Score != 0 && u.gameActiveColor == "b" {
+				evalHuman *= -1
+			}
+			u.gameEvalHumanized = evalHuman
+
+			u.WriteLine(fmt.Sprintf("info string agro %v eval %0.2f", u.gameAgro, u.gameEvalHumanized))
 
 		default:
 			u.logInfo(fmt.Sprintf("SF: <- %s", line))
@@ -346,10 +358,11 @@ func (u *UCI) parseLine(line string) {
 	case "ucinewgame":
 		u.sf.Write("ucinewgame")
 		u.gameMoveCount = 0
-		u.gameAbsEval = 0
+		u.gameEval = 0
 		u.gameMateIn = 0
-		u.gameMultiPV = 8
+		u.gameMultiPV = defaultMultiPV
 		u.gameAgro = false
+		u.gameActiveColor = "w"
 		u.sf.Write(fmt.Sprintf("setoption name MultiPV value %d", u.gameMultiPV))
 	case "setoption":
 		if len(parts) > 4 {
@@ -413,7 +426,7 @@ func (u *UCI) SetOption(name, value string) {
 		}
 
 		u.sf.Write(fmt.Sprintf("setoption name Threads value %d", n))
-		u.sf.Write(fmt.Sprintf("setoption name Hash value %d", n*256))
+		u.sf.Write(fmt.Sprintf("setoption name Hash value %d", n*threadsHashMultiplier))
 		u.sf.Write(fmt.Sprintf("setoption name MultiPV value %d", u.gameMultiPV))
 	case "multipv":
 		// ignore
@@ -575,10 +588,11 @@ func (u *UCI) Go(v ...string) {
 		return
 	}
 
-	if strings.HasPrefix(u.fen, "r1b1k1nr/pppp1ppp/2n5/4P3/1b6/2N2N2/PqPBPPPP/1R1QKB1R b") { // Bc2 Bb4 Rb1 ... sac!
+	// TODO: play against humans
+	/*if strings.HasPrefix(u.fen, "r1b1k1nr/pppp1ppp/2n5/4P3/1b6/2N2N2/PqPBPPPP/1R1QKB1R b") { // Bc2 Bb4 Rb1 ... sac!
 		u.WriteLine("bestmove b2c3")
 		return
-	}
+	}*/
 
 	if strings.HasPrefix(u.fen, "r1b1kbnr/pppp1ppp/2n5/4P3/1q6/5N2/PPPBPPPP/RN1QKB1R b") {
 		// 1. d4 e5 2. dxe5 Nc6 3. Nf3 Qe7 4. (Bg4, Bg5) Qb4+ 5. Bd2 Qxc2 (Black, Englund Gambit)
@@ -597,6 +611,18 @@ func (u *UCI) Go(v ...string) {
 		return
 	}
 
+	var ourTime, oppTime int
+	if u.gameActiveColor == "w" {
+		ourTime = atoi(v[1])
+		oppTime = atoi(v[2])
+	} else {
+		oppTime = atoi(v[1])
+		ourTime = atoi(v[2])
+	}
+
+	lowTime := ourTime < 15_000
+	veryLowTime := lowTime && (ourTime < 5_000 || ourTime < oppTime)
+
 	// don't tell SF we're in a time control
 	// TODO: improve time management
 	agro := false
@@ -608,24 +634,39 @@ func (u *UCI) Go(v ...string) {
 	} else if u.gameMateIn > 0 {
 		agro = true
 		moveTime = 100 * u.gameMateIn
-	} else if u.gameAbsEval > 800 {
+	} else if u.gameEval > 800 {
 		agro = true
 	} else if u.gameMoveCount >= 30 && u.gameMoveCount < 40 {
-		if u.gameAbsEval < 150 {
+		if u.gameEval < 150 {
 			agro = true
 			moveTime = 2000 + rand.Intn(1000)
 		}
 	} else if u.gameMoveCount >= 40 {
 		agro = true
-		if u.gameAbsEval < 350 {
+		if u.gameEval == 0 {
+			moveTime = 250 // flag 'em
+		} else if u.gameEval < 350 {
 			moveTime = 3500 + rand.Intn(1000)
 		}
 	}
 
+	min := func(a, b int) int {
+		if a < b {
+			return a
+		}
+		return b
+	}
+
+	if lowTime {
+		moveTime = min(moveTime, 250)
+	} else if veryLowTime {
+		moveTime = min(moveTime, 50)
+	}
+
 	if agro {
 		u.gameAgro = true
-		if u.gameMultiPV != 2 {
-			u.gameMultiPV = 2
+		if u.gameMultiPV != agroMultiPV {
+			u.gameMultiPV = agroMultiPV
 			u.sf.Write(fmt.Sprintf("setoption name MultiPV value %d", u.gameMultiPV))
 		}
 	}
@@ -657,8 +698,9 @@ func (u *UCI) SetPosition(v ...string) {
 		}
 		u.fen = b.FEN()
 		u.gameMoveCount = atoi(b.FullMove)
+		u.gameActiveColor = b.ActiveColor
 
-		u.WriteLine(fmt.Sprintf("info fen set to '%s' (move %d)", u.fen, u.gameMoveCount))
+		u.WriteLine(fmt.Sprintf("info fen set to '%s' move %d, %s to play", u.fen, u.gameMoveCount, u.gameActiveColor))
 		return
 	}
 
@@ -687,6 +729,7 @@ func (u *UCI) SetPosition(v ...string) {
 	b := FENtoBoard(u.fen)
 	b.Moves(moves...)
 	u.fen = b.FEN()
+	u.gameActiveColor = b.ActiveColor
 
 	u.gameMoveCount = atoi(b.FullMove)
 }
