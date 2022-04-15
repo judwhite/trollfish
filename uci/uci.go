@@ -611,17 +611,36 @@ func (u *UCI) Go(v ...string) {
 		return
 	}
 
-	var ourTime, oppTime int
+	var wtime, btime, winc, binc int
+	for i := 0; i < len(v); i += 2 {
+		switch v[i] {
+		case "wtime":
+			wtime = atoi(v[i+1])
+		case "winc":
+			binc = atoi(v[i+1])
+		case "btime":
+			btime = atoi(v[i+1])
+		case "binc":
+			binc = atoi(v[i+1])
+		default:
+
+		}
+	}
+
+	var ourTime, oppTime, ourInc, oppInc int
 	if u.gameActiveColor == "w" {
-		ourTime = atoi(v[1])
-		oppTime = atoi(v[2])
+		ourTime, ourInc = wtime, winc
+		oppTime, oppInc = btime, binc
 	} else {
-		oppTime = atoi(v[1])
-		ourTime = atoi(v[2])
+		oppTime, oppInc = wtime, winc
+		ourTime, ourInc = btime, binc
 	}
 
 	lowTime := ourTime < 15_000
 	veryLowTime := lowTime && (ourTime < 5_000 || ourTime < oppTime)
+
+	u.sf.Write(fmt.Sprintf("info string our_time: %d+%d opp_time: %d+%d active_color: %s %v low_time: %v very_low_time: %v",
+		ourTime, ourInc, oppTime, oppInc, u.gameActiveColor, v, lowTime, veryLowTime))
 
 	// don't tell SF we're in a time control
 	// TODO: improve time management
@@ -633,7 +652,7 @@ func (u *UCI) Go(v ...string) {
 		moveTime = 100 + rand.Intn(500)
 	} else if u.gameMateIn > 0 {
 		agro = true
-		moveTime = 100 * u.gameMateIn
+		moveTime = max(250, 100*u.gameMateIn)
 	} else if u.gameEval > 800 {
 		agro = true
 	} else if u.gameMoveCount >= 30 && u.gameMoveCount < 40 {
@@ -650,17 +669,15 @@ func (u *UCI) Go(v ...string) {
 		}
 	}
 
-	min := func(a, b int) int {
-		if a < b {
-			return a
-		}
-		return b
+	// we're losing, stop to think
+	if u.gameEval < -300 && ourTime > (oppTime/2) {
+		moveTime = 3500 + rand.Intn(1000)
 	}
 
-	if lowTime {
-		moveTime = min(moveTime, 250)
-	} else if veryLowTime {
+	if veryLowTime {
 		moveTime = min(moveTime, 50)
+	} else if lowTime {
+		moveTime = min(moveTime, 250)
 	}
 
 	if agro {
@@ -793,4 +810,18 @@ func redirectStderr(f *os.File) {
 	if err != nil {
 		log.Fatalf("Failed to redirect stderr to file: %v", err)
 	}
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+func max(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }
