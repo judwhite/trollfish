@@ -32,6 +32,7 @@ type UCI struct {
 	fen string
 
 	started int64
+	playBad bool
 
 	moveListMtx       sync.Mutex
 	moveListNodes     int
@@ -324,6 +325,16 @@ func (u *UCI) stockFishReadLoop() {
 
 			u.printMoveList(false)
 
+			if u.playBad {
+				bestMove = u.moveList[len(u.moveList)-1]
+				for i := len(u.moveList) - 2; i >= 0; i-- {
+					badMove := u.moveList[i]
+					if badMove.Score < 0 || badMove.Mate < 0 {
+						bestMove = badMove
+					}
+				}
+			}
+
 			u.moveList = nil
 			u.moveListPrinted = false
 			u.moveListNodes = 0
@@ -462,6 +473,8 @@ func (u *UCI) SetOption(name, value string) {
 	case "multipv":
 		// ignore
 		//u.sf.Write(fmt.Sprintf("setoption name MultiPV value %s", value))
+	case "playbad":
+		u.playBad = value == "true"
 	default:
 		u.WriteLine(fmt.Sprintf("info option '%s' not found", name))
 	}
