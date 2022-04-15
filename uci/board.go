@@ -52,6 +52,10 @@ func (b *Board) FEN() string {
 }
 
 func (b *Board) Moves(moves ...string) {
+	if len(moves) == 0 {
+		return
+	}
+
 	halfMoveClock := atoi(b.HalfmoveClock)
 	fullMove := atoi(b.FullMove)
 

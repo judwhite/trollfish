@@ -45,6 +45,8 @@ type UCI struct {
 	gameEvalHumanized float64
 	gameAgro          bool
 
+	seenPositions map[string]int
+
 	sf *stockfish.StockFish
 
 	ctx    context.Context
@@ -87,6 +89,19 @@ func New(name, author string, options ...Option) *UCI {
 		options:     options,
 		gameMultiPV: defaultMultiPV,
 	}
+}
+
+func (u *UCI) ResetGame() {
+	u.sf.Write("ucinewgame")
+	u.gameMoveCount = 0
+	u.gameActiveColor = "w"
+	u.gameMultiPV = defaultMultiPV
+	u.gameMateIn = 0
+	u.gameEval = 0
+	u.gameEvalHumanized = 0
+	u.gameAgro = false
+	u.seenPositions = make(map[string]int)
+	u.sf.Write(fmt.Sprintf("setoption name MultiPV value %d", u.gameMultiPV))
 }
 
 func (u *UCI) Start(ctx context.Context) (context.Context, context.CancelFunc) {
@@ -266,8 +281,12 @@ func (u *UCI) stockFishReadLoop() {
 			minDist := 1_000_000
 
 			var engineMove Info
+			var altEngineMove Info
 			if len(u.moveList) > 0 {
 				engineMove = u.moveList[0]
+				if len(u.moveList) > 1 {
+					altEngineMove = u.moveList[1]
+				}
 			} else {
 				engineMove = Info{PV: strings.Join(parts[1:], " ")}
 			}
@@ -309,12 +328,32 @@ func (u *UCI) stockFishReadLoop() {
 			u.moveListPrinted = false
 			u.moveListNodes = 0
 
+			u.storeFEN(u.fen)
+			uciMove := strings.Split(bestMove.PV, " ")[0]
+
+			posReps := u.positionReps(u.fen, uciMove)
+			if posReps != 0 {
+				u.logInfo(fmt.Sprintf("fen: '%s' move %s reps: %d, picking alternate",
+					u.fen, uciMove, posReps))
+
+				// pick an alternate move if one exists
+				if engineMove.PV != "" && engineMove.PV != bestMove.PV && engineMove.Score >= -30 {
+					bestMove = engineMove
+				} else if altEngineMove.PV != "" && altEngineMove.PV != bestMove.PV && altEngineMove.Score >= -30 {
+					bestMove = altEngineMove
+				}
+
+				uciMove = strings.Split(bestMove.PV, " ")[0]
+
+				u.logInfo(fmt.Sprintf("alternate move '%s' chosen to avoid repetition", uciMove))
+			}
+
 			u.gameMateIn = bestMove.Mate
 			u.gameEval = bestMove.Score
 
-			u.moveListMtx.Unlock()
+			u.storeFEN(u.fen, uciMove)
 
-			uciMove := strings.Split(bestMove.PV, " ")[0]
+			u.moveListMtx.Unlock()
 
 			u.WriteLine(fmt.Sprintf("bestmove %s", uciMove))
 			u.logInfo(fmt.Sprintf("agro: %v sf_move: %s sf_move_eval: %d played_move: %s eval: %d",
@@ -356,14 +395,7 @@ func (u *UCI) parseLine(line string) {
 	case "isready":
 		u.sf.Write("isready")
 	case "ucinewgame":
-		u.sf.Write("ucinewgame")
-		u.gameMoveCount = 0
-		u.gameEval = 0
-		u.gameMateIn = 0
-		u.gameMultiPV = defaultMultiPV
-		u.gameAgro = false
-		u.gameActiveColor = "w"
-		u.sf.Write(fmt.Sprintf("setoption name MultiPV value %d", u.gameMultiPV))
+		u.ResetGame()
 	case "setoption":
 		if len(parts) > 4 {
 			key := parts[2] // TODO: ignores that a key can be more than one word
@@ -375,7 +407,6 @@ func (u *UCI) parseLine(line string) {
 	case "stop":
 		u.sf.Write(line)
 	case "go":
-		// TODO: handle 'infinite' and 'movetime <ms>'
 		u.Go(parts[1:]...)
 	case "":
 	// no-op
@@ -474,129 +505,8 @@ func (u *UCI) setOptionRaw(v ...string) {
 }
 
 func (u *UCI) Go(v ...string) {
-	// trollfish opening book
-	if u.fen == startPosFEN {
-		// 1. e4 (White, best (gambits) by test)
-		u.WriteLine("bestmove e2e4")
-		return
-	}
-
-	if strings.HasPrefix(u.fen, "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w") {
-		// 1. e4 e5 2. Qh5 (White, Wayward Queen)
-		u.WriteLine("bestmove d1h5")
-		return
-	}
-
-	if strings.HasPrefix(u.fen, "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b") {
-		// 1. e4 c5 (Black, Smith-Morra Gambit)
-		u.WriteLine("bestmove c7c5")
-		return
-	}
-
-	if strings.HasPrefix(u.fen, "rnbqkbnr/pp1ppppp/8/2p5/4P3/8/PPPP1PPP/RNBQKBNR w") {
-		// 1. e4 c5 2. d4 (White, Smith-Morra Gambit)
-		u.WriteLine("bestmove d2d4")
-		return
-	}
-
-	if strings.HasPrefix(u.fen, "rnbqkbnr/pp1ppppp/8/2p5/3PP3/8/PPP2PPP/RNBQKBNR b") {
-		// 1. e4 c5 2. d4 cxd4 (Black, Smith-Morra Gambit)
-		u.WriteLine("bestmove c5d4")
-		return
-	}
-
-	if strings.HasPrefix(u.fen, "rnbqkbnr/pp1ppppp/8/8/3pP3/8/PPP2PPP/RNBQKBNR w") {
-		// 1. e4 c5 2. d4 cxd4 3. c3 (White, Smith-Morra Gambit)
-		u.WriteLine("bestmove c2c3")
-		return
-	}
-
-	if strings.HasPrefix(u.fen, "rnbqkbnr/pp1ppppp/8/8/3pP3/2P5/PP3PPP/RNBQKBNR b") {
-		// 1. e4 c5 2. d4 cxd4 3. c3 dxc3 (Black, Smith-Morra Gambit)
-		u.WriteLine("bestmove d4c3")
-		return
-	}
-
-	if strings.HasPrefix(u.fen, "rnbqkbnr/pp1ppppp/8/8/4P3/2p5/PP3PPP/RNBQKBNR w") {
-		// 1. e4 c5 2. d4 cxd4 3. c3 dxc3 4. Nxc3 (White, Smith-Morra Gambit)
-		u.WriteLine("bestmove b1c3")
-		return
-	}
-
-	if strings.HasPrefix(u.fen, "rnbqkbnr/pppppppp/8/8/3P4/8/PPP1PPPP/RNBQKBNR b") {
-		// 1. d4 e5 (Black, Englund Gambit)
-		u.WriteLine("bestmove e7e5")
-		return
-	}
-
-	if strings.HasPrefix(u.fen, "rnbqkbnr/pppp1ppp/8/4p3/3P4/8/PPP1PPPP/RNBQKBNR w") {
-		// 1. d4 e5 2. dxe5 (White, Englund Gambit)
-		u.WriteLine("bestmove d4e5")
-		return
-	}
-
-	if strings.HasPrefix(u.fen, "rnbqkbnr/pppp1ppp/8/4P3/8/8/PPP1PPPP/RNBQKBNR b") {
-		// 1. d4 e5 2. dxe5 Nc6 (Black, Englund Gambit)
-		u.WriteLine("bestmove b8c6")
-		return
-	}
-
-	if strings.HasPrefix(u.fen, "r1bqkbnr/pppp1ppp/2n5/4P3/8/8/PPP1PPPP/RNBQKBNR w") {
-		// 1. d4 e5 2. dxe5 Nc6 3. Nf3 (White, Englund Gambit)
-		u.WriteLine("bestmove g1f3")
-		return
-	}
-
-	if strings.HasPrefix(u.fen, "r1bqkbnr/pppp1ppp/2n5/4P3/8/5N2/PPP1PPPP/RNBQKB1R b") { // 3. Nf3
-		// 1. d4 e5 2. dxe5 Nc6 3. Nf3 Qe7 (Black, Englund Gambit)
-		u.WriteLine("bestmove d8e7")
-		return
-	}
-
-	if strings.HasPrefix(u.fen, "r1bqkbnr/pppp1ppp/2n5/4P3/5B2/8/PPP1PPPP/RN1QKBNR b") { // 3. Bf4
-		// 1. d4 e5 2. dxe5 Nc6 3. Bf4 Qe7 (Black, Englund Gambit)
-		u.WriteLine("bestmove d8e7")
-		return
-	}
-
-	if strings.HasPrefix(u.fen, "r1b1kbnr/ppppqppp/2n5/4P3/8/5N2/PPP1PPPP/RNBQKB1R w") { // 4. Bg5
-		// 1. d4 e5 2. dxe5 Nc6 3. Nf3 Qe7 4. Bg5 (White, Englund Gambit)
-		u.WriteLine("bestmove c1g5")
-		return
-	}
-
-	if strings.HasPrefix(u.fen, "r1b1kbnr/ppppqppp/2n5/4P1B1/8/5N2/PPP1PPPP/RN1QKB1R b") { // 4. Bg5 Qb4+
-		// 1. d4 e5 2. dxe5 Nc6 3. Nf3 Qe7 4. Bg5 Qb4+ (Black, Englund Gambit)
-		u.WriteLine("bestmove e7b4")
-		return
-	}
-
-	if strings.HasPrefix(u.fen, "r1b1kbnr/ppppqppp/2n5/4P3/5B2/5N2/PPP1PPPP/RN1QKB1R b") { // (Nf3, Bf4) ... Qb4+
-		// 1. d4 e5 2. dxe5 Nc6 3. Nf3 Qe7 4. Bg4 Qb4+ (Black, Englund Gambit)
-		u.WriteLine("bestmove e7b4")
-		return
-	}
-
-	if strings.HasPrefix(u.fen, "r1b1kbnr/pppp1ppp/2n5/4P1B1/1q6/2N2N2/PPP1PPPP/R2QKB1R b") { // Bg5 Nc3
-		// 1. d4 e5 2. dxe5 Nc6 3. Nf3 Qe7 4. Bg4 Qb4+ 5. Nc3 Qxc2 (Black, Englund Gambit)
-		u.WriteLine("bestmove b4b2")
-		return
-	}
-
-	if strings.HasPrefix(u.fen, "r1b1kbnr/pppp1ppp/2n5/4P3/8/2N2N2/PqPBPPPP/R2QKB1R b") { // Bc2 Bb4
-		u.WriteLine("bestmove f8b4")
-		return
-	}
-
-	// TODO: play against humans
-	/*if strings.HasPrefix(u.fen, "r1b1k1nr/pppp1ppp/2n5/4P3/1b6/2N2N2/PqPBPPPP/1R1QKB1R b") { // Bc2 Bb4 Rb1 ... sac!
-		u.WriteLine("bestmove b2c3")
-		return
-	}*/
-
-	if strings.HasPrefix(u.fen, "r1b1kbnr/pppp1ppp/2n5/4P3/1q6/5N2/PPPBPPPP/RN1QKB1R b") {
-		// 1. d4 e5 2. dxe5 Nc6 3. Nf3 Qe7 4. (Bg4, Bg5) Qb4+ 5. Bd2 Qxc2 (Black, Englund Gambit)
-		u.WriteLine("bestmove b4b2")
+	if move := u.BookMove(); move != "" {
+		u.WriteLine("bestmove " + move)
 		return
 	}
 
@@ -623,7 +533,7 @@ func (u *UCI) Go(v ...string) {
 		case "binc":
 			binc = atoi(v[i+1])
 		default:
-
+			// no-op
 		}
 	}
 
@@ -636,8 +546,13 @@ func (u *UCI) Go(v ...string) {
 		ourTime, ourInc = btime, binc
 	}
 
+	ourTime -= 500 // account for network latency
+	if ourTime <= 0 {
+		ourTime = 1
+	}
+
 	lowTime := ourTime < 15_000
-	veryLowTime := lowTime && (ourTime < 5_000 || ourTime < oppTime)
+	veryLowTime := ourTime < 5_000
 
 	u.sf.Write(fmt.Sprintf("info string our_time: %d+%d opp_time: %d+%d active_color: %s %v low_time: %v very_low_time: %v",
 		ourTime, ourInc, oppTime, oppInc, u.gameActiveColor, v, lowTime, veryLowTime))
@@ -662,7 +577,7 @@ func (u *UCI) Go(v ...string) {
 		}
 	} else if u.gameMoveCount >= 40 {
 		agro = true
-		if u.gameEval == 0 {
+		if u.gameEval == 0 && oppTime > ourTime {
 			moveTime = 250 // flag 'em
 		} else if u.gameEval < 350 {
 			moveTime = 3500 + rand.Intn(1000)
@@ -674,11 +589,23 @@ func (u *UCI) Go(v ...string) {
 		moveTime = 3500 + rand.Intn(1000)
 	}
 
-	if veryLowTime {
-		moveTime = min(moveTime, 50)
-	} else if lowTime {
-		moveTime = min(moveTime, 250)
+	maxTime1 := (ourTime - oppTime) / 2
+	var maxTime2 int
+	if maxTime1 < 0 && (oppTime*100 > ourTime*115 || ourTime <= 20_000) {
+		maxTime2 = ourTime / 100
+	} else {
+		maxTime2 = ourTime / 20
 	}
+
+	maxTime := max(maxTime1, maxTime2)
+	origMoveTime := moveTime
+	moveTime = min(moveTime, maxTime)
+	moveTime = max(moveTime, 5)
+	u.logInfo(fmt.Sprintf("ourTime: %d oppTime: %d maxTime1: %d maxTime2: %d maxTime: %d origMoveTime: %d finalMoveTime: %d",
+		ourTime, oppTime,
+		maxTime1, maxTime2, maxTime,
+		origMoveTime, moveTime,
+	))
 
 	if agro {
 		u.gameAgro = true
@@ -824,4 +751,31 @@ func max(a, b int) int {
 		return a
 	}
 	return b
+}
+
+func (u *UCI) fenKey(fen string, moves ...string) string {
+	b := FENtoBoard(fen)
+	b.Moves(moves...)
+
+	newFEN := b.FEN()
+	fenParts := strings.Split(newFEN, " ")
+	fenKey := strings.Join(fenParts[0:2], " ")
+	return fenKey
+}
+
+func (u *UCI) positionReps(fen string, moves ...string) int {
+	fenKey := u.fenKey(fen, moves...)
+
+	count := u.seenPositions[fenKey]
+
+	return count
+}
+
+func (u *UCI) storeFEN(fen string, moves ...string) int {
+	fenKey := u.fenKey(fen, moves...)
+
+	count := u.seenPositions[fenKey] + 1
+	u.seenPositions[fenKey] = count
+
+	return count
 }
