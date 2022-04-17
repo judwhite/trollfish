@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"math"
 	"math/rand"
 	"os"
 	"strconv"
@@ -19,8 +18,8 @@ import (
 )
 
 const startPosFEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
-const defaultThreads = 16
-const threadsHashMultiplier = 512
+const defaultThreads = 24
+const threadsHashMultiplier = 2048
 const defaultMultiPV = 5
 const agroMultiPV = 2
 
@@ -34,17 +33,17 @@ type UCI struct {
 	started int64
 	playBad bool
 
-	moveListMtx       sync.Mutex
-	moveListNodes     int
-	moveList          []Info
-	moveListPrinted   bool
-	gameMoveCount     int
-	gameActiveColor   string
-	gameMultiPV       int
-	gameMateIn        int
-	gameEval          int
-	gameEvalHumanized float64
-	gameAgro          bool
+	moveListMtx     sync.Mutex
+	moveListNodes   int
+	moveList        []Info
+	moveListPrinted bool
+	gameMoveCount   int
+	gameActiveColor string
+	gameMultiPV     int
+	gameMateIn      int
+	gameEval        int
+	gameAgro        bool
+	startAgro       bool
 
 	seenPositions map[string]int
 
@@ -99,8 +98,7 @@ func (u *UCI) ResetGame() {
 	u.gameMultiPV = defaultMultiPV
 	u.gameMateIn = 0
 	u.gameEval = 0
-	u.gameEvalHumanized = 0
-	u.gameAgro = false
+	u.gameAgro = u.startAgro
 	u.seenPositions = make(map[string]int)
 	u.sf.Write(fmt.Sprintf("setoption name MultiPV value %d", u.gameMultiPV))
 }
@@ -293,8 +291,7 @@ func (u *UCI) stockFishReadLoop() {
 			}
 			bestMove := engineMove
 
-			engineMoveAbsEval := int(math.Abs(float64(engineMove.Score)))
-			if engineMoveAbsEval > 2000 || engineMove.Mate > 0 || u.gameAgro {
+			if engineMove.Score >= 2000 || engineMove.Mate > 0 || u.gameAgro {
 				u.gameAgro = true
 			} else {
 				u.gameMateIn = 0
@@ -343,14 +340,14 @@ func (u *UCI) stockFishReadLoop() {
 			uciMove := strings.Split(bestMove.PV, " ")[0]
 
 			posReps := u.positionReps(u.fen, uciMove)
-			if posReps != 0 {
+			if posReps != 0 && bestMove.Score == 0 && bestMove.Mate == 0 {
 				u.logInfo(fmt.Sprintf("fen: '%s' move %s reps: %d, picking alternate",
 					u.fen, uciMove, posReps))
 
 				// pick an alternate move if one exists
-				if engineMove.PV != "" && engineMove.PV != bestMove.PV && engineMove.Score >= -30 {
+				if engineMove.PV != "" && engineMove.PV != bestMove.PV && engineMove.Score >= -30 && engineMove.Mate >= 0 {
 					bestMove = engineMove
-				} else if altEngineMove.PV != "" && altEngineMove.PV != bestMove.PV && altEngineMove.Score >= -30 {
+				} else if altEngineMove.PV != "" && altEngineMove.PV != bestMove.PV && altEngineMove.Score >= -30 && altEngineMove.Mate >= 0 {
 					bestMove = altEngineMove
 				}
 
@@ -377,9 +374,17 @@ func (u *UCI) stockFishReadLoop() {
 			if bestMove.Score != 0 && u.gameActiveColor == "b" {
 				evalHuman *= -1
 			}
-			u.gameEvalHumanized = evalHuman
+			evalString := fmt.Sprintf("%0.2f", evalHuman)
 
-			u.WriteLine(fmt.Sprintf("info string agro %v eval %0.2f", u.gameAgro, u.gameEvalHumanized))
+			if bestMove.Mate != 0 {
+				mateHuman := bestMove.Mate
+				if u.gameActiveColor == "b" {
+					mateHuman *= -1
+				}
+				evalString = fmt.Sprintf("M%d", mateHuman)
+			}
+
+			u.WriteLine(fmt.Sprintf("info string agro %v eval %s", u.gameAgro, evalString))
 
 		default:
 			u.logInfo(fmt.Sprintf("SF: <- %s", line))
@@ -475,6 +480,9 @@ func (u *UCI) SetOption(name, value string) {
 		//u.sf.Write(fmt.Sprintf("setoption name MultiPV value %s", value))
 	case "playbad":
 		u.playBad = value == "true"
+	case "startagro":
+		u.startAgro = value == "true"
+
 	default:
 		u.WriteLine(fmt.Sprintf("info option '%s' not found", name))
 	}
@@ -518,11 +526,6 @@ func (u *UCI) setOptionRaw(v ...string) {
 }
 
 func (u *UCI) Go(v ...string) {
-	if move := u.BookMove(); move != "" {
-		u.WriteLine("bestmove " + move)
-		return
-	}
-
 	// passthroughs
 	if len(v) <= 1 {
 		u.sf.Write(fmt.Sprintf("go %s", strings.Join(v, " ")))
@@ -540,7 +543,7 @@ func (u *UCI) Go(v ...string) {
 		case "wtime":
 			wtime = atoi(v[i+1])
 		case "winc":
-			binc = atoi(v[i+1])
+			winc = atoi(v[i+1])
 		case "btime":
 			btime = atoi(v[i+1])
 		case "binc":
@@ -548,6 +551,12 @@ func (u *UCI) Go(v ...string) {
 		default:
 			// no-op
 		}
+	}
+
+	if move := u.BookMove(winc == 13_000); move != "" {
+		u.logInfo(fmt.Sprintf("book_move: %s", move))
+		u.WriteLine("bestmove " + move)
+		return
 	}
 
 	var ourTime, oppTime, ourInc, oppInc int
@@ -574,26 +583,26 @@ func (u *UCI) Go(v ...string) {
 	// TODO: improve time management
 	agro := false
 
-	moveTime := 500 + rand.Intn(1000)
+	moveTime := 1000 + rand.Intn(500)
+	mate := false
 
 	if u.gameMoveCount < 5 {
-		moveTime = 100 + rand.Intn(500)
+		moveTime = 250 + rand.Intn(500)
 	} else if u.gameMateIn > 0 {
 		agro = true
-		moveTime = max(250, 100*u.gameMateIn)
+		mate = true
+		moveTime = max(250, 75*u.gameMateIn)
 	} else if u.gameEval > 800 {
 		agro = true
-	} else if u.gameMoveCount >= 30 && u.gameMoveCount < 40 {
+	} else if u.gameMoveCount >= 25 && u.gameMoveCount < 35 {
 		if u.gameEval < 150 {
 			agro = true
 			moveTime = 2000 + rand.Intn(1000)
 		}
-	} else if u.gameMoveCount >= 40 {
+	} else if u.gameMoveCount >= 35 {
 		agro = true
-		if u.gameEval == 0 && oppTime > ourTime {
-			moveTime = 250 // flag 'em
-		} else if u.gameEval < 350 {
-			moveTime = 3500 + rand.Intn(1000)
+		if u.gameEval < 350 {
+			moveTime = 1500 + rand.Intn(1000)
 		}
 	}
 
@@ -610,23 +619,40 @@ func (u *UCI) Go(v ...string) {
 		maxTime2 = ourTime / 20
 	}
 
+	minTimeBasedOnInc := min(ourInc*3/4, 5000)
+
 	maxTime := max(maxTime1, maxTime2)
 	origMoveTime := moveTime
 	moveTime = min(moveTime, maxTime)
+	moveTime = max(moveTime, minTimeBasedOnInc)
+	if u.gameEval > 2000 {
+		if ourTime > 2500 {
+			moveTime = 2500
+		} else {
+			moveTime = ourTime * 2 / 3
+		}
+	}
+	if mate {
+		moveTime = 250
+	}
+	moveTime = min(moveTime, ourTime)
 	moveTime = max(moveTime, 5)
+
 	u.logInfo(fmt.Sprintf("ourTime: %d oppTime: %d maxTime1: %d maxTime2: %d maxTime: %d origMoveTime: %d finalMoveTime: %d",
 		ourTime, oppTime,
 		maxTime1, maxTime2, maxTime,
 		origMoveTime, moveTime,
 	))
 
-	if agro {
+	u.moveListMtx.Lock()
+	if agro || u.gameAgro {
 		u.gameAgro = true
 		if u.gameMultiPV != agroMultiPV {
 			u.gameMultiPV = agroMultiPV
 			u.sf.Write(fmt.Sprintf("setoption name MultiPV value %d", u.gameMultiPV))
 		}
 	}
+	u.moveListMtx.Unlock()
 
 	u.sf.Write(fmt.Sprintf("go movetime %d", moveTime))
 }
