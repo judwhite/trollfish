@@ -173,11 +173,11 @@ func (b *Board) Moves(moves ...string) {
 			if toUCI == "g8" {
 				// king side
 				b.Pos[to+1] = ' '
-				b.Pos[to] = 'R'
+				b.Pos[to-1] = 'r'
 			} else if toUCI == "c8" {
 				// queen side
 				b.Pos[to-2] = ' '
-				b.Pos[to] = 'R'
+				b.Pos[to+1] = 'r'
 			}
 		}
 	}
