@@ -607,7 +607,8 @@ func (u *UCI) Go(v ...string) {
 	}
 
 	// we're losing, stop to think
-	if u.gameEval < -300 && ourTime > (oppTime/2) {
+	ponderEval := u.gameEval < -60 || (u.gameEval > 60 && u.gameEval < 400)
+	if ponderEval && ourTime > (oppTime/2) {
 		moveTime = 3500 + rand.Intn(1000)
 	}
 
