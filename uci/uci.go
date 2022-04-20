@@ -23,6 +23,9 @@ const threadsHashMultiplier = 2048
 const defaultMultiPV = 5
 const agroMultiPV = 2
 
+// TODO: get path from config file
+const stockfishPath = "/home/jud/projects/trollfish/stockfish/stockfish"
+
 type UCI struct {
 	name    string
 	author  string
@@ -142,8 +145,7 @@ func (u *UCI) Start(ctx context.Context) (context.Context, context.CancelFunc) {
 		}
 	}()
 
-	// TODO: get path from config file
-	sf, err := stockfish.Start(u.ctx, "/home/jud/projects/trollfish/stockfish/stockfish", u.logInfo)
+	sf, err := stockfish.Start(u.ctx, stockfishPath, u.logInfo)
 	if err != nil {
 		log.Fatal(err)
 	}
