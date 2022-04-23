@@ -98,11 +98,22 @@ func (u *UCI) BookMove(d4 bool) string {
 			// 1. e4 (White, best (gambits) by test)
 			return "e2e4"
 		}
-		if rand.Intn(2) == 0 {
+
+		whiteMove1 := []string{
+			"g1f3", // nf3
+			"g2g3", // g3
+			"c2c4", // c4
+			"e2e3", // e3
+		}
+
+		n := rand.Intn(len(whiteMove1))
+		return whiteMove1[n]
+
+		/*if rand.Intn(2) == 0 {
 			return "e2e4"
 		} else {
 			return "d2d4"
-		}
+		}*/
 	}
 
 	// Smith-Morra Gambit
@@ -134,6 +145,41 @@ func (u *UCI) BookMove(d4 bool) string {
 	if strings.HasPrefix(u.fen, "rnbqkbnr/pp1ppppp/8/8/4P3/2p5/PP3PPP/RNBQKBNR w") {
 		// 1. e4 c5 2. d4 cxd4 3. c3 dxc3 4. Nxc3 (White, Smith-Morra Gambit)
 		return "b1c3"
+	}
+
+	if strings.HasPrefix(u.fen, "rnbqkbnr/pp2pppp/3p4/8/4P3/2N5/PP3PPP/R1BQKBNR w KQkq -") {
+		// Smith-Morra: 4. ... d6 5. Bc4
+		return "f1c4"
+	}
+
+	if strings.HasPrefix(u.fen, "rnbqkbnr/pp2pppp/3p4/8/2B1P3/2N5/PP3PPP/R1BQK1NR b KQkq -") {
+		return "b8c6" // Smith-Morra: 4. ... d6 5. Bc4 Nc6
+	}
+
+	// TODO: we don't want to play an alternate move, but we want to respond to one
+	if strings.HasPrefix(u.fen, "rnbqkbnr/pp2pppp/3p4/8/2B1P3/2N5/PP3PPP/R1BQK1NR b KQkq -") {
+		return "e7e6" // Smith-Morra: 4. ... d6 5. Bc4 e6
+	}
+
+	// Reverse Morra
+	if strings.HasPrefix(u.fen, "rnbqkbnr/pppppppp/8/8/2P5/8/PP1PPPPP/RNBQKBNR b KQkq -") {
+		return "d2d4" // Reverse Morra: 1. c4 d4
+	}
+
+	if strings.HasPrefix(u.fen, "rnbqkbnr/ppp1pppp/8/3p4/2P5/8/PP1PPPPP/RNBQKBNR w KQkq -") {
+		return "c4d5" // Reverse Morra: 1. c4 d5 2. cxd5
+	}
+
+	if strings.HasPrefix(u.fen, "rnbqkbnr/ppp1pppp/8/3P4/8/8/PP1PPPPP/RNBQKBNR b KQkq -") {
+		return "c7c6" // Reverse Morra: 1. c4 d5 2. cxd5 c6
+	}
+
+	if strings.HasPrefix(u.fen, "rnbqkbnr/pp2pppp/2p5/3P4/8/8/PP1PPPPP/RNBQKBNR w KQkq -") {
+		return "d5c6" // Reverse Morra: 1. c4 d5 2. cxd5 c6 3. dxc6
+	}
+
+	if strings.HasPrefix(u.fen, "rnbqkbnr/pp2pppp/2P5/8/8/8/PP1PPPPP/RNBQKBNR b KQkq -") {
+		return "b8c8" // Reverse Morra: 1. c4 d5 2. cxd5 c6 3. dxc6 Nxc8
 	}
 
 	// d4 Opening
@@ -183,7 +229,7 @@ func (u *UCI) BookMove(d4 bool) string {
 
 	// Learned from games
 	if strings.HasPrefix(u.fen, "r1bqkb1r/1p1n1ppp/p1n1p3/2ppP3/3P1P2/2N1BN2/PPP1B1PP/R2QK2R b") {
-		return "c5d4" // cxd4; was b5
+		return "c5d4" // cxd4; was b5 // checked by the engine A LOT
 	}
 
 	if strings.HasPrefix(u.fen, "r1b1k2r/3nbppp/1qn1p3/ppppP3/3P1P2/P1N1BN2/1PP1B1PP/R2Q1RK1 b") {
@@ -201,6 +247,38 @@ func (u *UCI) BookMove(d4 bool) string {
 	if strings.HasPrefix(u.fen, "") {
 		return ""
 	}*/
+
+	if strings.HasPrefix(u.fen, "rnbqkb1r/pp3pp1/2p1pn1p/3p4/2PP3B/2N2N2/PP2PPPP/R2QKB1R b KQkq -") {
+		return "d5c4" // 6. ... dxc4 (SF15: d=45,cp=0)
+	}
+
+	if strings.HasPrefix(u.fen, "rnbqkb1r/pp3pp1/2p1pn1p/3p2B1/2PP4/2N2N2/PP2PPPP/R2QKB1R w KQkq") {
+		return "g5f6" // 6. Bxf6 (SF15: d=45,cp=24 d=40,cp=40); was Bh4 (0.00)
+	}
+
+	if strings.HasPrefix(u.fen, "rnbqkb1r/pp3ppp/2p1pn2/3p4/2PP4/2N2N2/PP2PPPP/R1BQKB1R w KQkq") {
+		return "e2e3" // 5. e3 (SF15: d=45,cp=35 d=40,cp=40); was Bg5 (d=45,cp=19; d=40,cp=10)
+	}
+
+	if strings.HasPrefix(u.fen, "rnbqkb1r/ppp2ppp/4pn2/3p4/2PP4/2N5/PP2PPPP/R1BQKBNR w KQkq") {
+		return "c4d5" // 4. cxd6 (0.3, Lichess, depth=44); was Nf3 (0.3)
+	}
+
+	if strings.HasPrefix(u.fen, "rnbqkbnr/ppp2ppp/4p3/3p4/2PP4/2N5/PP2PPPP/R1BQKBNR b KQkq") {
+		return "c7c6" // 3. ... c6 (0.1, Lichess, depth=43); was Nf6 (0.3)
+	}
+
+	if strings.HasPrefix(u.fen, "rnbqkbnr/ppp2ppp/4p3/3p4/2PP4/8/PP2PPPP/RNBQKBNR w KQkq") {
+		return "b1c3" // 3. Nc3 (0.1, Lichess, depth=45)
+	}
+
+	if strings.HasPrefix(u.fen, "rnbqkbnr/ppp1pppp/8/3p4/2PP4/8/PP2PPPP/RNBQKBNR b KQkq") {
+		return "b1c3" // 2. ... e6 (0.4? 0.1?, Lichess, depth=42)
+	}
+
+	if strings.HasPrefix(u.fen, "rnbqkbnr/ppp1pppp/8/3p4/3P4/8/PPP1PPPP/RNBQKBNR w KQkq") {
+		return "c2c4" // 2. c4 (0.4? 0.3? Lichess, depth=38)
+	}
 
 	return ""
 }
