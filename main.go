@@ -60,9 +60,6 @@ func createDownloadScripts() {
 }
 
 func main() {
-	createDownloadScripts()
-	return
-
 	rand.Seed(time.Now().UnixNano())
 
 	p := uci.New("trollfish 15", "the trollfish developers",

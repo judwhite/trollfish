@@ -14,6 +14,7 @@ import (
 	"sync/atomic"
 	"syscall"
 	"time"
+
 	"trollfish/stockfish"
 )
 
@@ -557,7 +558,7 @@ func (u *UCI) Go(v ...string) {
 		}
 	}
 
-	if move := u.BookMove(winc == 13_000); move != "" {
+	if move := u.BookMove(); move != "" {
 		u.logInfo(fmt.Sprintf("book_move: %s", move))
 		u.WriteLine("bestmove " + move)
 		return

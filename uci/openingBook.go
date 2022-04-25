@@ -5,6 +5,103 @@ import (
 	"strings"
 )
 
+type firstMove struct {
+	uci  string
+	freq int
+
+	min int
+	max int
+}
+
+var firstMoveMap = []*firstMove{
+	// stats from Stockfish 15 depths 35-50 of the starting position
+
+	// move  avg dev    avg  geometric mean  stddev
+	// e4       3.81  28.81           28.44    4.67
+	// d4       5.76  26.44           25.53    6.77
+	// Nf3      2.32  25.94           25.78    2.86
+	// g3       3.58  14.44           13.55    4.66
+	// c4       4.77  14.88           13.69    5.67
+	// e3       3.39  12.88           11.29    4.43
+
+	// top tier
+	{uci: "e2e4", freq: 29}, // 1. e4   +0.29
+	{uci: "d2d4", freq: 26}, // 1. d4   +0.26
+	{uci: "g1f3", freq: 26}, // 1. Nf3  +0.26
+	// second tier
+	{uci: "c2c4", freq: 14}, // 1. c4   +0.14
+	{uci: "g2g3", freq: 14}, // 1. g3   +0.14
+	{uci: "e2e3", freq: 6},  // 1. e3   +0.11 // NOTE: has a bad score (46.5%) in Caissabase; discounting eval
+	{uci: "b2b3", freq: 6},  // 1. b3    0.00 // NOTE: has a decent score (52.3%) in Caissabase; boosting eval
+	// equal
+	{uci: "a2a3", freq: 1}, // 1. a3    0.00
+	{uci: "c2c3", freq: 1}, // 1. c3    0.00
+	{uci: "d2d3", freq: 1}, // 1. d3    0.00
+	{uci: "h2h3", freq: 1}, // 1. h3    0.00
+	{uci: "b1c3", freq: 1}, // 1. Nc3   0.00
+	{uci: "a2a4", freq: 1}, // 1. a4   -0.14
+	// bad, but of interest. Komodo beat Stockfish with 1. f4 in 2020
+	{uci: "f2f4", freq: 3}, // 1. f4   -0.27
+	// bad
+	{uci: "b2b4", freq: 0}, // 1. b4   -0.29
+	{uci: "h2h4", freq: 0}, // 1. h4   -0.37
+	// very bad
+	{uci: "b1a3", freq: 0}, // 1. Na3  -0.52
+	{uci: "g1h3", freq: 0}, // 1. Nh3  -0.67
+	{uci: "f2f3", freq: 0}, // 1. f3   -0.73
+	{uci: "g2g4", freq: 0}, // 1. g4   -1.37
+}
+
+var firstMoveChoices []string
+
+func init() {
+	for _, item := range firstMoveMap {
+		if item.freq == 0 {
+			continue
+		}
+
+		for i := 0; i < item.freq; i++ {
+			firstMoveChoices = append(firstMoveChoices, item.uci)
+		}
+	}
+}
+
+func getFirstMove() string {
+	n := rand.Intn(len(firstMoveChoices))
+	return firstMoveChoices[n]
+}
+
+func (u *UCI) BookMove() string {
+	if !u.gameAgro {
+		move := u.CasualBookMove()
+		if move != "" {
+			return move
+		}
+	}
+
+	if u.fen == startPosFEN {
+		return getFirstMove()
+	}
+
+	// Learned from games
+	if strings.HasPrefix(u.fen, "rnbqkb1r/pp3ppp/2p1pn2/3p4/2PP4/2N2N2/PP2PPPP/R1BQKB1R w KQkq") {
+		// TODO: needs more analysis
+		return "e2e3" // 5. e3 (SF15: d=45,cp=35 d=40,cp=40); was Bg5 (d=45,cp=19; d=40,cp=10)
+	}
+
+	if strings.HasPrefix(u.fen, "rnbqkbnr/ppp2ppp/4p3/3p4/2PP4/2N5/PP2PPPP/R1BQKBNR b KQkq") {
+		// TODO: needs more analysis
+		return "c7c6" // 3. ... c6 (0.1, Lichess, depth=43); was Nf6 (0.3)
+	}
+
+	if strings.HasPrefix(u.fen, "rnbqkbnr/ppp1pppp/8/3p4/2PP4/8/PP2PPPP/RNBQKBNR b KQkq") {
+		// TODO: needs more analysis
+		return "b1c3" // 2. ... e6 (0.4? 0.1?, Lichess, depth=42)
+	}
+
+	return ""
+}
+
 func (u *UCI) CasualBookMove() string {
 	// Wayward Queen
 	if strings.HasPrefix(u.fen, "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w") {
@@ -77,45 +174,6 @@ func (u *UCI) CasualBookMove() string {
 		return "b4b2"
 	}
 
-	return ""
-}
-
-func (u *UCI) BookMove(d4 bool) string {
-	if !u.gameAgro {
-		move := u.CasualBookMove()
-		if move != "" {
-			return move
-		}
-	}
-
-	// trollfish opening book
-	if u.fen == startPosFEN {
-		if d4 {
-			// 1. d4
-			return "d2d4"
-		}
-		if !u.gameAgro {
-			// 1. e4 (White, best (gambits) by test)
-			return "e2e4"
-		}
-
-		whiteMove1 := []string{
-			"g1f3", // nf3
-			"g2g3", // g3
-			"c2c4", // c4
-			"e2e3", // e3
-		}
-
-		n := rand.Intn(len(whiteMove1))
-		return whiteMove1[n]
-
-		/*if rand.Intn(2) == 0 {
-			return "e2e4"
-		} else {
-			return "d2d4"
-		}*/
-	}
-
 	// Smith-Morra Gambit
 	if strings.HasPrefix(u.fen, "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b") {
 		// 1. e4 c5 (Black, Smith-Morra Gambit)
@@ -179,8 +237,21 @@ func (u *UCI) BookMove(d4 bool) string {
 	}
 
 	if strings.HasPrefix(u.fen, "rnbqkbnr/pp2pppp/2P5/8/8/8/PP1PPPPP/RNBQKBNR b KQkq -") {
-		return "b8c8" // Reverse Morra: 1. c4 d5 2. cxd5 c6 3. dxc6 Nxc8
+		return "b8c6" // Reverse Morra: 1. c4 d5 2. cxd5 c6 3. dxc6 Nxc6
 	}
+
+	if strings.HasPrefix(u.fen, "r1bqkbnr/pp2pppp/2n5/8/8/2N5/PP1PPPPP/R1BQKBNR b KQkq -") {
+		// Reverse Morra: 1. c4 d5 2. cxd5 c6 3. dxc6 Nxc6 4. Nc3
+		// { White can play Nc3, d3, e3, g3, a3, h3, e4, Nf3 in this position }
+		// 4. ... a6 (alternative to e5 or Nf3)
+		return "a7a6"
+	}
+
+	/*if strings.HasPrefix(u.fen, "r1bqkbnr/1p2pppp/p1n5/8/8/2N5/PP1PPPPP/R1BQKBNR w KQkq -") {
+		// Reverse Morra: 1. c4 d5 2. cxd5 c6 3. dxc6 Nxc6 4. Nc3 a6 5. g3
+		// { White can play Nf3, d3, g3, f4, e3 in this position }
+		return "g2g3"
+	}*/
 
 	// d4 Opening
 	if strings.HasPrefix(u.fen, "rnbqkbnr/pppppppp/8/8/3P4/8/PPP1PPPP/RNBQKBNR b") {
@@ -225,59 +296,6 @@ func (u *UCI) BookMove(d4 bool) string {
 
 	if strings.HasPrefix(u.fen, "rn1qkb1r/p1p2ppp/bp2pn2/3p4/2PP4/1P3NP1/P3PPBP/RNBQK2R b") {
 		return "b8d7" // 1. d4 Nf6 2. Nf3 e6 3. c4 b6 4. g3 Ba6 5. b3 d5 6. Bg2 Nbd7
-	}
-
-	// Learned from games
-	if strings.HasPrefix(u.fen, "r1bqkb1r/1p1n1ppp/p1n1p3/2ppP3/3P1P2/2N1BN2/PPP1B1PP/R2QK2R b") {
-		return "c5d4" // cxd4; was b5 // checked by the engine A LOT
-	}
-
-	if strings.HasPrefix(u.fen, "r1b1k2r/3nbppp/1qn1p3/ppppP3/3P1P2/P1N1BN2/1PP1B1PP/R2Q1RK1 b") {
-		return "c5d4" // cxd4; was Ba6
-	}
-
-	if strings.HasPrefix(u.fen, "8/8/8/Np1b1kP1/3Kp3/8/8/8 b") {
-		return "f5e6" // Ke6 (winning); was b4 (drawn)
-	}
-
-	/*if strings.HasPrefix(u.fen, "") {
-		return ""
-	}
-
-	if strings.HasPrefix(u.fen, "") {
-		return ""
-	}*/
-
-	if strings.HasPrefix(u.fen, "rnbqkb1r/pp3pp1/2p1pn1p/3p4/2PP3B/2N2N2/PP2PPPP/R2QKB1R b KQkq -") {
-		return "d5c4" // 6. ... dxc4 (SF15: d=45,cp=0)
-	}
-
-	if strings.HasPrefix(u.fen, "rnbqkb1r/pp3pp1/2p1pn1p/3p2B1/2PP4/2N2N2/PP2PPPP/R2QKB1R w KQkq") {
-		return "g5f6" // 6. Bxf6 (SF15: d=45,cp=24 d=40,cp=40); was Bh4 (0.00)
-	}
-
-	if strings.HasPrefix(u.fen, "rnbqkb1r/pp3ppp/2p1pn2/3p4/2PP4/2N2N2/PP2PPPP/R1BQKB1R w KQkq") {
-		return "e2e3" // 5. e3 (SF15: d=45,cp=35 d=40,cp=40); was Bg5 (d=45,cp=19; d=40,cp=10)
-	}
-
-	if strings.HasPrefix(u.fen, "rnbqkb1r/ppp2ppp/4pn2/3p4/2PP4/2N5/PP2PPPP/R1BQKBNR w KQkq") {
-		return "c4d5" // 4. cxd6 (0.3, Lichess, depth=44); was Nf3 (0.3)
-	}
-
-	if strings.HasPrefix(u.fen, "rnbqkbnr/ppp2ppp/4p3/3p4/2PP4/2N5/PP2PPPP/R1BQKBNR b KQkq") {
-		return "c7c6" // 3. ... c6 (0.1, Lichess, depth=43); was Nf6 (0.3)
-	}
-
-	if strings.HasPrefix(u.fen, "rnbqkbnr/ppp2ppp/4p3/3p4/2PP4/8/PP2PPPP/RNBQKBNR w KQkq") {
-		return "b1c3" // 3. Nc3 (0.1, Lichess, depth=45)
-	}
-
-	if strings.HasPrefix(u.fen, "rnbqkbnr/ppp1pppp/8/3p4/2PP4/8/PP2PPPP/RNBQKBNR b KQkq") {
-		return "b1c3" // 2. ... e6 (0.4? 0.1?, Lichess, depth=42)
-	}
-
-	if strings.HasPrefix(u.fen, "rnbqkbnr/ppp1pppp/8/3p4/3P4/8/PPP1PPPP/RNBQKBNR w KQkq") {
-		return "c2c4" // 2. c4 (0.4? 0.3? Lichess, depth=38)
 	}
 
 	return ""
