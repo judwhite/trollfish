@@ -279,6 +279,11 @@ func (u *UCI) stockFishReadLoop() {
 			u.moveListMtx.Unlock()
 
 		case "bestmove":
+			if line == "bestmove (none)" {
+				u.WriteLine(line)
+				break
+			}
+
 			u.moveListMtx.Lock()
 
 			minDist := 1_000_000
