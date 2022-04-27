@@ -393,8 +393,8 @@ func (u *UCI) stockFishReadLoop() {
 				u.WriteLine(fmt.Sprintf("bestmove %s %s", uciMove, addl))
 			}
 
-			u.logInfo(fmt.Sprintf("agro: %v sf_move: %s sf_move_eval: %d played_move: %s eval: %d",
-				u.gameAgro,
+			u.logInfo(fmt.Sprintf("play_bad: %v agro: %v sf_move: %s sf_move_eval: %d played_move: %s eval: %d",
+				u.playBad, u.gameAgro,
 				strings.Split(engineMove.PV, " ")[0], engineMove.Score,
 				uciMove, bestMove.Score,
 			))
