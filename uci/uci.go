@@ -190,6 +190,7 @@ func (u *UCI) stockFishReadLoop() {
 			u.sf.Write(fmt.Sprintf("setoption name Threads value %d", n))
 			u.sf.Write(fmt.Sprintf("setoption name Hash value %d", n*threadsHashMultiplier))
 			u.sf.Write(fmt.Sprintf("setoption name MultiPV value %d", u.gameMultiPV))
+			u.sf.Write("setoption name Move Overhead value 500")
 			u.WriteLine("uciok")
 		case "info":
 			if parts[1] == "string" {
@@ -366,13 +367,6 @@ func (u *UCI) stockFishReadLoop() {
 
 			u.moveListMtx.Unlock()
 
-			u.WriteLine(fmt.Sprintf("bestmove %s", uciMove))
-			u.logInfo(fmt.Sprintf("agro: %v sf_move: %s sf_move_eval: %d played_move: %s eval: %d",
-				u.gameAgro,
-				strings.Split(engineMove.PV, " ")[0], engineMove.Score,
-				uciMove, bestMove.Score,
-			))
-
 			evalHuman := float64(bestMove.Score) / 100
 			if bestMove.Score != 0 && u.gameActiveColor == "b" {
 				evalHuman *= -1
@@ -387,7 +381,18 @@ func (u *UCI) stockFishReadLoop() {
 				evalString = fmt.Sprintf("M%d", mateHuman)
 			}
 
-			u.WriteLine(fmt.Sprintf("info string agro %v eval %s", u.gameAgro, evalString))
+			addl := fmt.Sprintf("eval %s agro %v", evalString, u.gameAgro)
+			if uciMove == parts[1] {
+				u.WriteLine(line + " " + addl)
+			} else {
+				u.WriteLine(fmt.Sprintf("bestmove %s %s", uciMove, addl))
+			}
+
+			u.logInfo(fmt.Sprintf("agro: %v sf_move: %s sf_move_eval: %d played_move: %s eval: %d",
+				u.gameAgro,
+				strings.Split(engineMove.PV, " ")[0], engineMove.Score,
+				uciMove, bestMove.Score,
+			))
 
 		default:
 			u.logInfo(fmt.Sprintf("SF: <- %s", line))
@@ -425,6 +430,8 @@ func (u *UCI) parseLine(line string) {
 		u.SetPosition(parts[1:]...)
 	case "stop":
 		u.sf.Write(line)
+	case "ponderhit":
+		u.sf.Write("ponderhit")
 	case "go":
 		u.Go(parts[1:]...)
 	case "":
@@ -532,7 +539,7 @@ func (u *UCI) setOptionRaw(v ...string) {
 
 func (u *UCI) Go(v ...string) {
 	// passthroughs
-	if len(v) <= 1 {
+	if len(v) <= 1 || u.gameAgro {
 		u.sf.Write(fmt.Sprintf("go %s", strings.Join(v, " ")))
 		return
 	}
