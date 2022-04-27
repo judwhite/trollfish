@@ -19,10 +19,10 @@ import (
 )
 
 const startPosFEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
-const defaultThreads = 24
+const defaultThreads = 26
 const threadsHashMultiplier = 2048
 const defaultMultiPV = 5
-const agroMultiPV = 2
+const agroMultiPV = 1
 
 // TODO: get path from config file
 const stockfishPath = "/home/jud/projects/trollfish/stockfish/stockfish"
@@ -97,9 +97,13 @@ func New(name, author string, options ...Option) *UCI {
 
 func (u *UCI) ResetGame() {
 	u.sf.Write("ucinewgame")
+	if u.startAgro {
+		u.gameMultiPV = agroMultiPV
+	} else {
+		u.gameMultiPV = defaultMultiPV
+	}
 	u.gameMoveCount = 0
 	u.gameActiveColor = "w"
-	u.gameMultiPV = defaultMultiPV
 	u.gameMateIn = 0
 	u.gameEval = 0
 	u.gameAgro = u.startAgro
@@ -543,6 +547,13 @@ func (u *UCI) setOptionRaw(v ...string) {
 }
 
 func (u *UCI) Go(v ...string) {
+	if u.fen == startPosFEN {
+		move := getFirstMove()
+		u.logInfo(fmt.Sprintf("book_move: %s", move))
+		u.WriteLine("bestmove " + move)
+		return
+	}
+
 	// passthroughs
 	if len(v) <= 1 || u.gameAgro {
 		u.sf.Write(fmt.Sprintf("go %s", strings.Join(v, " ")))
