@@ -19,8 +19,8 @@ import (
 )
 
 const startPosFEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
-const defaultThreads = 26
-const threadsHashMultiplier = 2048
+const defaultThreads = 28
+const hashMemory = 49152
 const defaultMultiPV = 5
 const agroMultiPV = 1
 
@@ -48,8 +48,6 @@ type UCI struct {
 	gameEval        int
 	gameAgro        bool
 	startAgro       bool
-
-	seenPositions map[string]int
 
 	sf *stockfish.StockFish
 
@@ -107,7 +105,6 @@ func (u *UCI) ResetGame() {
 	u.gameMateIn = 0
 	u.gameEval = 0
 	u.gameAgro = u.startAgro
-	u.seenPositions = make(map[string]int)
 	u.sf.Write(fmt.Sprintf("setoption name MultiPV value %d", u.gameMultiPV))
 }
 
@@ -192,9 +189,9 @@ func (u *UCI) stockFishReadLoop() {
 		case "uciok":
 			n := defaultThreads
 			u.sf.Write(fmt.Sprintf("setoption name Threads value %d", n))
-			u.sf.Write(fmt.Sprintf("setoption name Hash value %d", n*threadsHashMultiplier))
+			u.sf.Write(fmt.Sprintf("setoption name Hash value %d", hashMemory))
 			u.sf.Write(fmt.Sprintf("setoption name MultiPV value %d", u.gameMultiPV))
-			u.sf.Write("setoption name Move Overhead value 500")
+			u.sf.Write("setoption name Move Overhead value 300")
 			u.WriteLine("uciok")
 		case "info":
 			if parts[1] == "string" {
@@ -293,18 +290,15 @@ func (u *UCI) stockFishReadLoop() {
 			minDist := 1_000_000
 
 			var engineMove Info
-			var altEngineMove Info
 			if len(u.moveList) > 0 {
 				engineMove = u.moveList[0]
-				if len(u.moveList) > 1 {
-					altEngineMove = u.moveList[1]
-				}
 			} else {
 				engineMove = Info{PV: strings.Join(parts[1:], " ")}
 			}
+
 			bestMove := engineMove
 
-			if engineMove.Score >= 2000 || engineMove.Mate > 0 || u.gameAgro {
+			if u.gameAgro || engineMove.Score >= 2000 || engineMove.Mate > 0 {
 				u.gameAgro = true
 			} else {
 				u.gameMateIn = 0
@@ -335,7 +329,7 @@ func (u *UCI) stockFishReadLoop() {
 
 			u.printMoveList(false)
 
-			if u.playBad {
+			if !u.gameAgro && u.playBad {
 				bestMove = u.moveList[len(u.moveList)-1]
 				for i := len(u.moveList) - 2; i >= 0; i-- {
 					badMove := u.moveList[i]
@@ -349,30 +343,10 @@ func (u *UCI) stockFishReadLoop() {
 			u.moveListPrinted = false
 			u.moveListNodes = 0
 
-			u.storeFEN(u.fen)
 			uciMove := strings.Split(bestMove.PV, " ")[0]
-
-			posReps := u.positionReps(u.fen, uciMove)
-			if posReps != 0 && bestMove.Score == 0 && bestMove.Mate == 0 {
-				u.logInfo(fmt.Sprintf("fen: '%s' move %s reps: %d, picking alternate",
-					u.fen, uciMove, posReps))
-
-				// pick an alternate move if one exists
-				if engineMove.PV != "" && engineMove.PV != bestMove.PV && engineMove.Score >= -30 && engineMove.Mate >= 0 {
-					bestMove = engineMove
-				} else if altEngineMove.PV != "" && altEngineMove.PV != bestMove.PV && altEngineMove.Score >= -30 && altEngineMove.Mate >= 0 {
-					bestMove = altEngineMove
-				}
-
-				uciMove = strings.Split(bestMove.PV, " ")[0]
-
-				u.logInfo(fmt.Sprintf("alternate move '%s' chosen to avoid repetition", uciMove))
-			}
 
 			u.gameMateIn = bestMove.Mate
 			u.gameEval = bestMove.Score
-
-			u.storeFEN(u.fen, uciMove)
 
 			u.moveListMtx.Unlock()
 
@@ -492,7 +466,7 @@ func (u *UCI) SetOption(name, value string) {
 		}
 
 		u.sf.Write(fmt.Sprintf("setoption name Threads value %d", n))
-		u.sf.Write(fmt.Sprintf("setoption name Hash value %d", n*threadsHashMultiplier))
+		u.sf.Write(fmt.Sprintf("setoption name Hash value %d", hashMemory))
 		u.sf.Write(fmt.Sprintf("setoption name MultiPV value %d", u.gameMultiPV))
 	case "multipv":
 		// ignore
@@ -819,31 +793,4 @@ func max(a, b int) int {
 		return a
 	}
 	return b
-}
-
-func (u *UCI) fenKey(fen string, moves ...string) string {
-	b := FENtoBoard(fen)
-	b.Moves(moves...)
-
-	newFEN := b.FEN()
-	fenParts := strings.Split(newFEN, " ")
-	fenKey := strings.Join(fenParts[0:2], " ")
-	return fenKey
-}
-
-func (u *UCI) positionReps(fen string, moves ...string) int {
-	fenKey := u.fenKey(fen, moves...)
-
-	count := u.seenPositions[fenKey]
-
-	return count
-}
-
-func (u *UCI) storeFEN(fen string, moves ...string) int {
-	fenKey := u.fenKey(fen, moves...)
-
-	count := u.seenPositions[fenKey] + 1
-	u.seenPositions[fenKey] = count
-
-	return count
 }
