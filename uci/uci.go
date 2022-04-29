@@ -329,7 +329,7 @@ func (u *UCI) stockFishReadLoop() {
 
 			u.printMoveList(false)
 
-			if !u.gameAgro && u.playBad {
+			if !u.gameAgro && u.playBad && len(u.moveList) > 0 {
 				bestMove = u.moveList[len(u.moveList)-1]
 				for i := len(u.moveList) - 2; i >= 0; i-- {
 					badMove := u.moveList[i]
