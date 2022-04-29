@@ -83,22 +83,6 @@ func (u *UCI) BookMove() string {
 		return getFirstMove()
 	}
 
-	// Learned from games
-	if strings.HasPrefix(u.fen, "rnbqkb1r/pp3ppp/2p1pn2/3p4/2PP4/2N2N2/PP2PPPP/R1BQKB1R w KQkq") {
-		// TODO: needs more analysis
-		return "e2e3" // 5. e3 (SF15: d=45,cp=35 d=40,cp=40); was Bg5 (d=45,cp=19; d=40,cp=10)
-	}
-
-	if strings.HasPrefix(u.fen, "rnbqkbnr/ppp2ppp/4p3/3p4/2PP4/2N5/PP2PPPP/R1BQKBNR b KQkq") {
-		// TODO: needs more analysis
-		return "c7c6" // 3. ... c6 (0.1, Lichess, depth=43); was Nf6 (0.3)
-	}
-
-	if strings.HasPrefix(u.fen, "rnbqkbnr/ppp1pppp/8/3p4/2PP4/8/PP2PPPP/RNBQKBNR b KQkq") {
-		// TODO: needs more analysis
-		return "b1c3" // 2. ... e6 (0.4? 0.1?, Lichess, depth=42)
-	}
-
 	return ""
 }
 
@@ -165,9 +149,9 @@ func (u *UCI) CasualBookMove() string {
 	}
 
 	// TODO: play against humans
-	if strings.HasPrefix(u.fen, "r1b1k1nr/pppp1ppp/2n5/4P3/1b6/2N2N2/PqPBPPPP/1R1QKB1R b") { // Bc2 Bb4 Rb1 ... sac!
+	/*if strings.HasPrefix(u.fen, "r1b1k1nr/pppp1ppp/2n5/4P3/1b6/2N2N2/PqPBPPPP/1R1QKB1R b") { // Bc2 Bb4 Rb1 ... sac!
 		return "b2c3"
-	}
+	}*/
 
 	if strings.HasPrefix(u.fen, "r1b1kbnr/pppp1ppp/2n5/4P3/1q6/5N2/PPPBPPPP/RN1QKB1R b") {
 		// 1. d4 e5 2. dxe5 Nc6 3. Nf3 Qe7 4. (Bg4, Bg5) Qb4+ 5. Bd2 Qxc2 (Black, Englund Gambit)
