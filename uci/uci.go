@@ -475,8 +475,11 @@ func (u *UCI) SetOption(name, value string) {
 		u.playBad = value == "true"
 	case "startagro":
 		u.startAgro = value == "true"
+		u.gameAgro = true
 	case "syzygypath":
 		u.sf.Write(fmt.Sprintf("setoption name SyzygyPath value %s", value))
+	case "ponder":
+		u.sf.Write(fmt.Sprintf("setoption name Ponder value %s", value))
 
 	default:
 		u.WriteLine(fmt.Sprintf("info option '%s' not found", name))
