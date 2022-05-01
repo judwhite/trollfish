@@ -191,7 +191,7 @@ func (u *UCI) stockFishReadLoop() {
 			u.sf.Write(fmt.Sprintf("setoption name Threads value %d", n))
 			u.sf.Write(fmt.Sprintf("setoption name Hash value %d", hashMemory))
 			u.sf.Write(fmt.Sprintf("setoption name MultiPV value %d", u.gameMultiPV))
-			u.sf.Write("setoption name Move Overhead value 300")
+			u.sf.Write("setoption name Move Overhead value 200")
 			u.WriteLine("uciok")
 		case "info":
 			if parts[1] == "string" {
