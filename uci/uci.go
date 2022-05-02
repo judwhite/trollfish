@@ -20,7 +20,7 @@ import (
 
 const startPosFEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
 const defaultThreads = 28
-const hashMemory = 49152
+const hashMemory = 40960 * 2
 const defaultMultiPV = 5
 const agroMultiPV = 1
 
@@ -191,7 +191,7 @@ func (u *UCI) stockFishReadLoop() {
 			u.sf.Write(fmt.Sprintf("setoption name Threads value %d", n))
 			u.sf.Write(fmt.Sprintf("setoption name Hash value %d", hashMemory))
 			u.sf.Write(fmt.Sprintf("setoption name MultiPV value %d", u.gameMultiPV))
-			u.sf.Write("setoption name Move Overhead value 200")
+			u.sf.Write("setoption name Move Overhead value 300")
 			u.WriteLine("uciok")
 		case "info":
 			if parts[1] == "string" {
