@@ -8,6 +8,7 @@ import (
 	"log"
 	"math/rand"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -280,6 +281,21 @@ func (u *UCI) stockFishReadLoop() {
 				u.moveListPrinted = false
 			}
 			u.moveList = append(u.moveList, move)
+			sort.Slice(u.moveList, func(i, j int) bool {
+				a := u.moveList[i]
+				b := u.moveList[j]
+
+				if a.Depth != b.Depth {
+					return a.Depth > b.Depth
+				}
+
+				if a.MultiPV != b.MultiPV {
+					return a.MultiPV < b.MultiPV
+				}
+
+				return a.Nodes > b.Nodes
+			})
+
 			u.moveListMtx.Unlock()
 
 		case "bestmove":
@@ -331,6 +347,7 @@ func (u *UCI) stockFishReadLoop() {
 			}
 
 			u.printMoveList(false)
+			u.WriteLine(strings.ReplaceAll(line, "bestmove", "sfbm"))
 
 			if !u.gameAgro && u.playBad && len(u.moveList) > 0 {
 				bestMove = u.moveList[len(u.moveList)-1]
@@ -702,16 +719,17 @@ func (u *UCI) SetPosition(v ...string) {
 		return
 	}
 
-	u.fen = startPosFEN
-	u.WriteLine(fmt.Sprintf("info fen set to '%s'", u.fen))
-
 	if len(v) == 1 {
+		u.fen = startPosFEN
+		u.WriteLine(fmt.Sprintf("info fen set to '%s', move 1, w to play", u.fen))
 		return
 	}
 
 	cmd = v[1]
 
 	if cmd != "moves" {
+		u.fen = startPosFEN
+		u.WriteLine(fmt.Sprintf("info fen set to '%s'", u.fen))
 		u.WriteLine(fmt.Sprintf("info ERR: position startpos '%s' command unknown", cmd))
 		return
 	}
@@ -721,9 +739,10 @@ func (u *UCI) SetPosition(v ...string) {
 	b := FENtoBoard(u.fen)
 	b.Moves(moves...)
 	u.fen = b.FEN()
+	u.gameMoveCount = atoi(b.FullMove)
 	u.gameActiveColor = b.ActiveColor
 
-	u.gameMoveCount = atoi(b.FullMove)
+	u.WriteLine(fmt.Sprintf("info fen set to '%s' move %d, %s to play", u.fen, u.gameMoveCount, u.gameActiveColor))
 }
 
 func (u *UCI) printMoveList(lock bool) {
