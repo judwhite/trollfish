@@ -20,7 +20,10 @@ import (
 
 const startPosFEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
 const defaultThreads = 28
-const hashMemory = 40960 * 2
+
+//const hashMemory = 40960
+//const hashMemory = 3072 // 1024*3
+const hashMemory = 7168 // 256*28
 const defaultMultiPV = 5
 const agroMultiPV = 1
 
