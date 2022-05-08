@@ -293,7 +293,11 @@ func (u *UCI) stockFishReadLoop() {
 					return a.MultiPV < b.MultiPV
 				}
 
-				return a.Nodes > b.Nodes
+				if a.Nodes != b.Nodes {
+					return a.Nodes > b.Nodes
+				}
+
+				return a.SelDepth > b.SelDepth
 			})
 
 			u.moveListMtx.Unlock()
@@ -389,6 +393,10 @@ func (u *UCI) stockFishReadLoop() {
 				u.WriteLine(line + " " + addl)
 			} else {
 				u.WriteLine(fmt.Sprintf("bestmove %s %s", uciMove, addl))
+
+				if u.gameAgro {
+					u.logInfo(fmt.Sprintf("!!! WARNING %s != %s", parts[1], uciMove))
+				}
 			}
 
 			u.logInfo(fmt.Sprintf("play_bad: %v agro: %v sf_move: %s sf_move_eval: %d played_move: %s eval: %d",
@@ -544,6 +552,12 @@ func (u *UCI) setOptionRaw(v ...string) {
 }
 
 func (u *UCI) Go(v ...string) {
+	u.moveListMtx.Lock()
+	u.moveList = nil
+	u.moveListPrinted = false
+	u.moveListNodes = 0
+	u.moveListMtx.Unlock()
+
 	if u.fen == startPosFEN {
 		move := getFirstMove()
 		u.logInfo(fmt.Sprintf("book_move: %s", move))
