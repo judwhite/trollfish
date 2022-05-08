@@ -26,7 +26,7 @@ const defaultThreads = 28
 //const hashMemory = 3072 // 1024*3
 const hashMemory = 7168 // 256*28
 const defaultMultiPV = 5
-const agroMultiPV = 1
+const agroMultiPV = 2
 
 // TODO: get path from config file
 const stockfishPath = "/home/jud/projects/trollfish/stockfish/stockfish"
