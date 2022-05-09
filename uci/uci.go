@@ -633,7 +633,7 @@ func (u *UCI) Go(v ...string) {
 		moveTime = max(250, 75*u.gameMateIn)
 	} else if u.gameEval > 800 {
 		agro = true
-	} else if u.gameMoveCount >= 25 && u.gameMoveCount < 35 {
+	} else if u.gameMoveCount >= 23 && u.gameMoveCount < 35 {
 		if u.gameEval < 150 {
 			agro = true
 			moveTime = 2000 + rand.Intn(1000)
